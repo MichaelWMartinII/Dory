@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+
+DEFAULT_GRAPH_PATH = Path(__file__).parent.parent / "engram.db"
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS nodes (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_activated TEXT NOT NULL,
+    activation_count INTEGER DEFAULT 0,
+    salience REAL DEFAULT 0.0,
+    is_core INTEGER DEFAULT 0,
+    tags TEXT DEFAULT '[]',
+    zone TEXT DEFAULT 'active',
+    superseded_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    weight REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    last_activated TEXT NOT NULL,
+    activation_count INTEGER DEFAULT 0,
+    decay_rate REAL DEFAULT 0.02
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+    id UNINDEXED,
+    content,
+    tags
+);
+
+CREATE TABLE IF NOT EXISTS observations (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    role TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    compressed INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS compressed_obs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    referenced_at TEXT,
+    source_ids TEXT DEFAULT '[]'
+);
+"""
+
+
+def _connect(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_SCHEMA)
+    # Migrate older DBs that predate zone/superseded_at columns
+    for col, defn in [("zone", "TEXT DEFAULT 'active'"), ("superseded_at", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE nodes ADD COLUMN {col} {defn}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    return conn
+
+
+def load(path: Path = DEFAULT_GRAPH_PATH) -> dict:
+    conn = _connect(path)
+    nodes = [dict(r) for r in conn.execute("SELECT * FROM nodes").fetchall()]
+    edges = [dict(r) for r in conn.execute("SELECT * FROM edges").fetchall()]
+    conn.close()
+    for n in nodes:
+        n["tags"] = json.loads(n.get("tags") or "[]")
+        n["is_core"] = bool(n["is_core"])
+    return {"nodes": nodes, "edges": edges}
+
+
+def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
+    conn = _connect(path)
+
+    for n in data.get("nodes", []):
+        tags = n["tags"] if isinstance(n.get("tags"), list) else json.loads(n.get("tags") or "[]")
+        conn.execute(
+            """
+            INSERT INTO nodes
+                (id, type, content, created_at, last_activated,
+                 activation_count, salience, is_core, tags, zone, superseded_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                type=excluded.type,
+                content=excluded.content,
+                last_activated=excluded.last_activated,
+                activation_count=excluded.activation_count,
+                salience=excluded.salience,
+                is_core=excluded.is_core,
+                tags=excluded.tags,
+                zone=excluded.zone,
+                superseded_at=excluded.superseded_at
+            """,
+            (
+                n["id"], n["type"], n["content"],
+                n["created_at"], n["last_activated"],
+                n["activation_count"], n["salience"],
+                int(n["is_core"]),
+                json.dumps(tags),
+                n.get("zone", "active"),
+                n.get("superseded_at"),
+            ),
+        )
+
+    for e in data.get("edges", []):
+        conn.execute(
+            """
+            INSERT INTO edges
+                (id, source_id, target_id, type, weight,
+                 created_at, last_activated, activation_count, decay_rate)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                weight=excluded.weight,
+                last_activated=excluded.last_activated,
+                activation_count=excluded.activation_count
+            """,
+            (
+                e["id"], e["source_id"], e["target_id"],
+                e["type"], e["weight"],
+                e["created_at"], e["last_activated"],
+                e["activation_count"], e["decay_rate"],
+            ),
+        )
+
+    # Rebuild FTS index
+    conn.execute("DELETE FROM nodes_fts")
+    for n in data.get("nodes", []):
+        raw_tags = n.get("tags") or []
+        tags_list = raw_tags if isinstance(raw_tags, list) else json.loads(raw_tags)
+        conn.execute(
+            "INSERT INTO nodes_fts (id, content, tags) VALUES (?,?,?)",
+            (n["id"], n["content"], " ".join(tags_list)),
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def search_fts(query: str, path: Path = DEFAULT_GRAPH_PATH, limit: int = 20) -> list[str]:
+    """BM25 full-text search. Returns node IDs ranked by relevance."""
+    conn = _connect(path)
+    try:
+        rows = conn.execute(
+            "SELECT id FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?",
+            (query, limit),
+        ).fetchall()
+        return [r["id"] for r in rows]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def write_observation(
+    obs_id: str,
+    content: str,
+    path: Path = DEFAULT_GRAPH_PATH,
+    session_id: str | None = None,
+    role: str | None = None,
+    created_at: str | None = None,
+) -> None:
+    """Append a raw turn to the episodic observation log."""
+    from .schema import now_iso
+    conn = _connect(path)
+    conn.execute(
+        "INSERT OR IGNORE INTO observations (id, session_id, role, content, created_at) VALUES (?,?,?,?,?)",
+        (obs_id, session_id, role, content, created_at or now_iso()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_observations(
+    path: Path = DEFAULT_GRAPH_PATH,
+    session_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Retrieve raw observations, optionally filtered by session."""
+    conn = _connect(path)
+    if session_id:
+        rows = conn.execute(
+            "SELECT * FROM observations WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM observations ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
