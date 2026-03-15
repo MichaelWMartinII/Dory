@@ -25,7 +25,7 @@ from typing import Any
 
 from ..graph import Graph
 from ..schema import NodeType, EdgeType, new_id, now_iso
-from .. import store
+from .. import store, session as _session
 
 # ---------------------------------------------------------------------------
 # Extraction prompt
@@ -113,6 +113,27 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
         return json.loads(content)
+    except Exception as e:
+        return {"_error": str(e)}
+
+
+def _call_anthropic(turns_text: str, model: str, api_key: str) -> dict | None:
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            system=_SYSTEM_PROMPT,
+            messages=[
+                {"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)}
+            ],
+        )
+        raw = resp.content[0].text
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return _extract_json(raw) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -247,6 +268,8 @@ class Observer:
             return _call_ollama(turns_text, self.model)
         elif self.backend == "openai":
             return _call_openai_compat(turns_text, self.model, self.base_url, self.api_key)
+        elif self.backend == "anthropic":
+            return _call_anthropic(turns_text, self.model, self.api_key)
         return None
 
     def _write(self, extracted: dict) -> None:
@@ -292,8 +315,8 @@ class Observer:
                 self._stats["nodes_written"] += 1
                 continue
 
-            node = self.graph.add_node(type=node_type, content=content, tags=tags)
-            content_to_id[content] = node.id
+            node_id = _session.observe(content, node_type, self.graph, tags=tags)
+            content_to_id[content] = node_id
             self._stats["nodes_written"] += 1
 
         # Write edges

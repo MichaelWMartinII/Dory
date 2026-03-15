@@ -145,10 +145,11 @@ class Reflector:
 
     def find_near_duplicates(self) -> list[tuple[Node, Node, float]]:
         """
-        Return pairs of active nodes with Jaccard similarity >= dup_threshold.
+        Return pairs of nodes with Jaccard similarity >= dup_threshold.
+        Compares across all zones so archived duplicates are caught too.
         Each pair is (node_a, node_b, similarity), a before b by ID sort.
         """
-        nodes = self.graph.all_nodes(zone=ZONE_ACTIVE)
+        nodes = self.graph.all_nodes(zone=None)  # all zones — archived dupes must be caught
         pairs: list[tuple[Node, Node, float]] = []
         for i, a in enumerate(nodes):
             for b in nodes[i + 1:]:
@@ -213,13 +214,15 @@ class Reflector:
                 if edge.target_id == drop.id:
                     edge.target_id = keep.id
 
-            # Archive the duplicate
-            drop.zone = ZONE_ARCHIVED
-            drop.superseded_at = now_iso()
-            archived_ids.add(drop.id)
+            # Hard-delete the duplicate node (rewiring already handled above)
+            # Remove self-loops that may have been created by rewiring
+            to_remove_edges = [eid for eid, e in self.graph._edges.items()
+                               if e.source_id == e.target_id]
+            for eid in to_remove_edges:
+                del self.graph._edges[eid]
 
-            # Add a provenance edge
-            self.graph.add_edge(keep.id, drop.id, EdgeType.SUPERSEDES, weight=1.0)
+            del self.graph._nodes[drop.id]
+            archived_ids.add(drop.id)
             merged += 1
 
         return merged

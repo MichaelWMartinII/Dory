@@ -26,9 +26,11 @@ def strengthen(traversed_edge_ids: list[str], graph: Graph, delta: float = 0.05)
 
 def decay(graph: Graph) -> None:
     """Decay all edge weights proportional to time since last activation."""
+    now = now_iso()
     for edge in graph.all_edges():
         days = _days_since(edge.last_activated)
         edge.weight = max(0.0, edge.weight - edge.decay_rate * days)
+        edge.last_activated = now  # reset so next decay only subtracts the delta since now
 
 
 def prune(graph: Graph, min_weight: float = 0.05) -> int:
@@ -60,15 +62,26 @@ def demote_core(graph: Graph, threshold: float = 0.25) -> list[str]:
 
 
 def run(graph: Graph) -> dict:
-    """Full consolidation pass: decay → prune → promote/demote → recompute salience."""
+    """Full consolidation pass: decay → prune → promote/demote → zone management → dedup."""
+    from .pipeline.decayer import Decayer
+    from .pipeline.reflector import Reflector
+
     decay(graph)
     pruned = prune(graph)
     promoted = promote_core(graph)
     demoted = demote_core(graph)
     graph._recompute_salience()
-    graph.save()
+
+    decayer_stats = Decayer(graph).run()
+    reflector_stats = Reflector(graph).run()
+
     return {
         "pruned_edges": pruned,
         "promoted_core": len(promoted),
         "demoted_core": len(demoted),
+        "archived_nodes": decayer_stats["archived"],
+        "expired_nodes": decayer_stats["expired"],
+        "restored_nodes": decayer_stats["restored"],
+        "duplicates_merged": reflector_stats["duplicates_merged"],
+        "supersessions": reflector_stats["supersessions_applied"],
     }

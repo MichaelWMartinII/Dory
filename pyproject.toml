@@ -1,42 +1,49 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "dory-ai"
 version = "0.1.0"
 description = "Agent memory that actually sticks. Local-first, graph-based, with principled forgetting."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Michael Martin" }]
 requires-python = ">=3.11"
 keywords = ["agent", "memory", "llm", "ai", "graph", "local", "rag"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = [
-    "sqlite-vec>=0.1.6",
-    "ollama>=0.6.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
+ollama = ["ollama>=0.6.0"]
+vector = ["sqlite-vec>=0.1.6"]
+anthropic = ["anthropic>=0.40.0"]
+openai = ["httpx>=0.27.0"]
+mcp = ["mcp>=1.0.0"]
+full = ["ollama>=0.6.0", "sqlite-vec>=0.1.6", "anthropic>=0.40.0", "httpx>=0.27.0", "mcp>=1.0.0"]
 dev = ["pytest>=8.0", "pytest-cov"]
 
 [project.scripts]
 dory = "dory_cli:main"
+dory-mcp = "dory_mcp:main"
 
 [project.urls]
-Homepage = "https://github.com/MichaelMartinTech/Dory"
-Repository = "https://github.com/MichaelMartinTech/Dory"
-Issues = "https://github.com/MichaelMartinTech/Dory/issues"
+Homepage = "https://github.com/MichaelWMartinII/Dory"
+Repository = "https://github.com/MichaelWMartinII/Dory"
+Issues = "https://github.com/MichaelWMartinII/Dory/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dory*"]
+
+[tool.setuptools]
+py-modules = ["dory_cli", "dory_mcp"]

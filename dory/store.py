@@ -88,6 +88,22 @@ def load(path: Path = DEFAULT_GRAPH_PATH) -> dict:
 def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
     conn = _connect(path)
 
+    # Remove nodes and edges that are no longer in the in-memory graph
+    node_ids = [n["id"] for n in data.get("nodes", [])]
+    edge_ids = [e["id"] for e in data.get("edges", [])]
+    if node_ids:
+        conn.execute(
+            f"DELETE FROM nodes WHERE id NOT IN ({','.join('?'*len(node_ids))})", node_ids
+        )
+    else:
+        conn.execute("DELETE FROM nodes")
+    if edge_ids:
+        conn.execute(
+            f"DELETE FROM edges WHERE id NOT IN ({','.join('?'*len(edge_ids))})", edge_ids
+        )
+    else:
+        conn.execute("DELETE FROM edges")
+
     for n in data.get("nodes", []):
         tags = n["tags"] if isinstance(n.get("tags"), list) else json.loads(n.get("tags") or "[]")
         conn.execute(

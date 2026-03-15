@@ -14,23 +14,32 @@ from dory.schema import NodeType, EdgeType
 
 g = Graph()
 
+
+def _n(node_type: NodeType, content: str, tags: list[str] | None = None):
+    """Find existing node by exact content match, or create a new one."""
+    for node in g.all_nodes(zone=None):
+        if node.type == node_type and node.content == content:
+            return node
+    return _n(node_type, content, tags=tags or [])
+
+
 print("Seeding Engram graph...")
 
 # ── People ────────────────────────────────────────────────────────────────────
 
-michael = g.add_node(NodeType.ENTITY, "Michael Martin", tags=["person", "owner"])
+michael = _n(NodeType.ENTITY, "Michael Martin", tags=["person", "owner"])
 print(f"  {michael.id}  Michael Martin")
 
 # ── Projects ──────────────────────────────────────────────────────────────────
 
-agent = g.add_node(NodeType.ENTITY, "Agent", tags=["project", "ai", "local-llm", "python"])
-clanker = g.add_node(NodeType.ENTITY, "Clanker", tags=["project", "ai", "local-llm", "python", "rag"])
-allergy = g.add_node(NodeType.ENTITY, "AllergyFind", tags=["project", "saas", "fastapi", "python", "business"])
-ferrobot = g.add_node(NodeType.ENTITY, "FerroBot", tags=["project", "simulation", "physics", "python"])
-engram = g.add_node(NodeType.ENTITY, "Engram", tags=["project", "memory", "graph", "python"])
-portfolio = g.add_node(NodeType.ENTITY, "portfolio", tags=["project", "nextjs", "typescript", "react"])
-socials = g.add_node(NodeType.ENTITY, "Socials", tags=["project", "ai", "claude", "python", "cli"])
-weathermap = g.add_node(NodeType.ENTITY, "WeatherMap", tags=["project", "pwa", "javascript", "leaflet"])
+agent = _n(NodeType.ENTITY, "Agent", tags=["project", "ai", "local-llm", "python"])
+clanker = _n(NodeType.ENTITY, "Clanker", tags=["project", "ai", "local-llm", "python", "rag"])
+allergy = _n(NodeType.ENTITY, "AllergyFind", tags=["project", "saas", "fastapi", "python", "business"])
+ferrobot = _n(NodeType.ENTITY, "FerroBot", tags=["project", "simulation", "physics", "python"])
+engram = _n(NodeType.ENTITY, "Engram", tags=["project", "memory", "graph", "python"])
+portfolio = _n(NodeType.ENTITY, "portfolio", tags=["project", "nextjs", "typescript", "react"])
+socials = _n(NodeType.ENTITY, "Socials", tags=["project", "ai", "claude", "python", "cli"])
+weathermap = _n(NodeType.ENTITY, "WeatherMap", tags=["project", "pwa", "javascript", "leaflet"])
 
 print(f"  {agent.id}  Agent")
 print(f"  {clanker.id}  Clanker")
@@ -43,52 +52,52 @@ print(f"  {weathermap.id}  WeatherMap")
 
 # ── Technologies ──────────────────────────────────────────────────────────────
 
-fastapi = g.add_node(NodeType.CONCEPT, "FastAPI", tags=["framework", "python", "web"])
-postgres = g.add_node(NodeType.CONCEPT, "PostgreSQL", tags=["database", "sql"])
-supabase = g.add_node(NodeType.CONCEPT, "Supabase", tags=["database", "postgres", "hosted"])
-nextjs = g.add_node(NodeType.CONCEPT, "Next.js", tags=["framework", "react", "typescript"])
-llamacpp = g.add_node(NodeType.CONCEPT, "llama.cpp", tags=["local-llm", "inference", "c++"])
-chromadb = g.add_node(NodeType.CONCEPT, "ChromaDB", tags=["vector-db", "rag", "embeddings"])
-sqlite = g.add_node(NodeType.CONCEPT, "SQLite", tags=["database", "local"])
-mlx = g.add_node(NodeType.CONCEPT, "MLX", tags=["apple-silicon", "inference", "framework"])
-anthropic_api = g.add_node(NodeType.CONCEPT, "Anthropic API", tags=["api", "claude", "cloud"])
-local_llm = g.add_node(NodeType.CONCEPT, "local-first AI", tags=["architecture", "privacy", "no-cloud"])
-qwen = g.add_node(NodeType.CONCEPT, "Qwen models", tags=["llm", "alibaba", "open-source"])
-spreading_activation = g.add_node(NodeType.CONCEPT, "spreading activation", tags=["memory", "graph", "retrieval", "collins-loftus"])
+fastapi = _n(NodeType.CONCEPT, "FastAPI", tags=["framework", "python", "web"])
+postgres = _n(NodeType.CONCEPT, "PostgreSQL", tags=["database", "sql"])
+supabase = _n(NodeType.CONCEPT, "Supabase", tags=["database", "postgres", "hosted"])
+nextjs = _n(NodeType.CONCEPT, "Next.js", tags=["framework", "react", "typescript"])
+llamacpp = _n(NodeType.CONCEPT, "llama.cpp", tags=["local-llm", "inference", "c++"])
+chromadb = _n(NodeType.CONCEPT, "ChromaDB", tags=["vector-db", "rag", "embeddings"])
+sqlite = _n(NodeType.CONCEPT, "SQLite", tags=["database", "local"])
+mlx = _n(NodeType.CONCEPT, "MLX", tags=["apple-silicon", "inference", "framework"])
+anthropic_api = _n(NodeType.CONCEPT, "Anthropic API", tags=["api", "claude", "cloud"])
+local_llm = _n(NodeType.CONCEPT, "local-first AI", tags=["architecture", "privacy", "no-cloud"])
+qwen = _n(NodeType.CONCEPT, "Qwen models", tags=["llm", "alibaba", "open-source"])
+spreading_activation = _n(NodeType.CONCEPT, "spreading activation", tags=["memory", "graph", "retrieval", "collins-loftus"])
 
 print(f"  {fastapi.id}  FastAPI")
 print(f"  {local_llm.id}  local-first AI")
 
 # ── Preferences ───────────────────────────────────────────────────────────────
 
-pref_local = g.add_node(NodeType.PREFERENCE, "Prefers local-first, no cloud AI where possible", tags=["architecture"])
-pref_license = g.add_node(NodeType.PREFERENCE, "Prefers Apache 2.0 licensed models", tags=["licensing"])
-pref_privacy = g.add_node(NodeType.PREFERENCE, "Values privacy — data stays on device", tags=["privacy"])
-pref_mlx = g.add_node(NodeType.PREFERENCE, "Use MLX over llama.cpp on Apple Silicon (20-30% faster)", tags=["performance", "apple-silicon"])
-pref_qwen = g.add_node(NodeType.PREFERENCE, "Uses Qwen3-14B-Q4_K_M as primary local model", tags=["llm", "local"])
+pref_local = _n(NodeType.PREFERENCE, "Prefers local-first, no cloud AI where possible", tags=["architecture"])
+pref_license = _n(NodeType.PREFERENCE, "Prefers Apache 2.0 licensed models", tags=["licensing"])
+pref_privacy = _n(NodeType.PREFERENCE, "Values privacy — data stays on device", tags=["privacy"])
+pref_mlx = _n(NodeType.PREFERENCE, "Use MLX over llama.cpp on Apple Silicon (20-30% faster)", tags=["performance", "apple-silicon"])
+pref_qwen = _n(NodeType.PREFERENCE, "Uses Qwen3-14B-Q4_K_M as primary local model", tags=["llm", "local"])
 
 print(f"  {pref_local.id}  Preference: local-first")
 print(f"  {pref_license.id}  Preference: Apache 2.0")
 
 # ── Beliefs / Architecture decisions ─────────────────────────────────────────
 
-belief_flatfile = g.add_node(NodeType.BELIEF, "Flat file memory has no topology, no emergence — Engram solves this", tags=["memory", "architecture"])
-belief_gap = g.add_node(NodeType.BELIEF, "Open/closed LLM gap is now ~2% — open models viable for most tasks", tags=["llm", "open-source"])
-belief_chinese = g.add_node(NodeType.BELIEF, "Chinese labs (Qwen, DeepSeek, MiniMax, Kimi) now dominate open-source frontier", tags=["llm", "open-source"])
-belief_meta = g.add_node(NodeType.BELIEF, "Meta may go closed-source with Avocado — Llama 4 may be last open Llama", tags=["llm", "meta", "open-source"])
-belief_moe = g.add_node(NodeType.BELIEF, "MoE architecture: total params ≠ inference cost, only active params matter", tags=["llm", "architecture", "moe"])
+belief_flatfile = _n(NodeType.BELIEF, "Flat file memory has no topology, no emergence — Engram solves this", tags=["memory", "architecture"])
+belief_gap = _n(NodeType.BELIEF, "Open/closed LLM gap is now ~2% — open models viable for most tasks", tags=["llm", "open-source"])
+belief_chinese = _n(NodeType.BELIEF, "Chinese labs (Qwen, DeepSeek, MiniMax, Kimi) now dominate open-source frontier", tags=["llm", "open-source"])
+belief_meta = _n(NodeType.BELIEF, "Meta may go closed-source with Avocado — Llama 4 may be last open Llama", tags=["llm", "meta", "open-source"])
+belief_moe = _n(NodeType.BELIEF, "MoE architecture: total params ≠ inference cost, only active params matter", tags=["llm", "architecture", "moe"])
 
 print(f"  {belief_gap.id}  Belief: open/closed gap")
 
 # ── Key facts / Events ────────────────────────────────────────────────────────
 
-giovanni = g.add_node(NodeType.ENTITY, "Giovanni Ristorante Nashville", tags=["customer", "allergyfind", "restaurant"])
-murfreesboro = g.add_node(NodeType.ENTITY, "Murfreesboro, TN", tags=["location"])
-elwin = g.add_node(NodeType.ENTITY, "Elwin Ransom", tags=["agent", "ai-companion", "name"])
-deepseek_v4 = g.add_node(NodeType.EVENT, "DeepSeek V4 expected March 2026 — worth waiting for as fine-tune base", tags=["llm", "deepseek", "upcoming"])
-fine_tune_plan = g.add_node(NodeType.CONCEPT, "Fine-tune coding model on Lambda Labs, run quantized locally", tags=["plan", "lambda-labs", "fine-tuning"])
-best_local_coding = g.add_node(NodeType.CONCEPT, "Qwen3-Coder-Next (80B/3B active) best local coding agent on 64GB Apple Silicon", tags=["local-llm", "coding", "recommendation"])
-best_local_reasoning = g.add_node(NodeType.CONCEPT, "QwQ-32B best local reasoning model — rivals DeepSeek R1 at 1/20th size", tags=["local-llm", "reasoning", "recommendation"])
+giovanni = _n(NodeType.ENTITY, "Giovanni Ristorante Nashville", tags=["customer", "allergyfind", "restaurant"])
+murfreesboro = _n(NodeType.ENTITY, "Murfreesboro, TN", tags=["location"])
+elwin = _n(NodeType.ENTITY, "Elwin Ransom", tags=["agent", "ai-companion", "name"])
+deepseek_v4 = _n(NodeType.EVENT, "DeepSeek V4 expected March 2026 — worth waiting for as fine-tune base", tags=["llm", "deepseek", "upcoming"])
+fine_tune_plan = _n(NodeType.CONCEPT, "Fine-tune coding model on Lambda Labs, run quantized locally", tags=["plan", "lambda-labs", "fine-tuning"])
+best_local_coding = _n(NodeType.CONCEPT, "Qwen3-Coder-Next (80B/3B active) best local coding agent on 64GB Apple Silicon", tags=["local-llm", "coding", "recommendation"])
+best_local_reasoning = _n(NodeType.CONCEPT, "QwQ-32B best local reasoning model — rivals DeepSeek R1 at 1/20th size", tags=["local-llm", "reasoning", "recommendation"])
 
 print(f"  {giovanni.id}  Giovanni Ristorante (AllergyFind customer)")
 print(f"  {elwin.id}  Elwin Ransom (Agent name)")
@@ -152,9 +161,21 @@ g.add_edge(best_local_coding.id, local_llm.id, EdgeType.INSTANCE_OF)
 g.add_edge(best_local_reasoning.id, local_llm.id, EdgeType.INSTANCE_OF)
 g.add_edge(pref_mlx.id, mlx.id, EdgeType.RELATED_TO)
 
+# Beliefs — LLM landscape
+g.add_edge(belief_gap.id, local_llm.id, EdgeType.RELATED_TO)
+g.add_edge(belief_gap.id, qwen.id, EdgeType.RELATED_TO)
+g.add_edge(belief_chinese.id, qwen.id, EdgeType.RELATED_TO)
+g.add_edge(belief_chinese.id, belief_gap.id, EdgeType.RELATED_TO)
+g.add_edge(belief_meta.id, belief_gap.id, EdgeType.RELATED_TO)
+g.add_edge(belief_meta.id, local_llm.id, EdgeType.RELATED_TO)
+g.add_edge(belief_moe.id, qwen.id, EdgeType.RELATED_TO)
+g.add_edge(belief_moe.id, belief_chinese.id, EdgeType.RELATED_TO)
+
 # Consolidate
 from dory import consolidation
 result = consolidation.run(g)
+
+g.save()
 
 stats = g.stats()
 print(f"\nGraph seeded:")

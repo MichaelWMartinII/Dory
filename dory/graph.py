@@ -24,14 +24,19 @@ class Graph:
         self.path = path
         self._nodes: dict[str, Node] = {}
         self._edges: dict[str, Edge] = {}
+        self._dirty: bool = False
         self._load()
 
     def _load(self) -> None:
         data = store.load(self.path)
         self._nodes = {n["id"]: Node.from_dict(n) for n in data.get("nodes", [])}
         self._edges = {e["id"]: Edge.from_dict(e) for e in data.get("edges", [])}
+        self._dirty = False
 
     def save(self) -> None:
+        if self._dirty:
+            self._recompute_salience()
+            self._dirty = False
         store.save(
             {
                 "nodes": [n.to_dict() for n in self._nodes.values()],
@@ -58,8 +63,7 @@ class Graph:
             tags=tags or [],
         )
         self._nodes[node.id] = node
-        self._recompute_salience()
-        self.save()
+        self._dirty = True
         return node
 
     def get_node(self, node_id: str) -> Node | None:
@@ -67,6 +71,9 @@ class Graph:
 
     def find_nodes(self, query: str, zone: str | None = ZONE_ACTIVE) -> list[Node]:
         """Substring search across content and tags, filtered by zone."""
+        if self._dirty:
+            self._recompute_salience()
+            self._dirty = False
         terms = query.lower().split()
         results = []
         for node in self._nodes.values():
@@ -103,7 +110,7 @@ class Graph:
                 edge.weight = min(1.0, edge.weight + 0.1)
                 edge.activation_count += 1
                 edge.last_activated = now_iso()
-                self.save()
+                self._dirty = True
                 return edge
 
         now = now_iso()
@@ -118,8 +125,7 @@ class Graph:
             decay_rate=decay_rate,
         )
         self._edges[edge.id] = edge
-        self._recompute_salience()
-        self.save()
+        self._dirty = True
         return edge
 
     def edges_for_node(self, node_id: str) -> list[Edge]:

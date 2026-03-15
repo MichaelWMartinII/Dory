@@ -44,30 +44,66 @@ The deeper problem: naive memory injection makes things *worse*. Dumping everyth
 ## Quick start
 
 ```python
+from dory import DoryMemory
+
+# Works with any model — local or cloud
+mem = DoryMemory()                                          # manual observations only
+mem = DoryMemory(extract_model="qwen3:14b")                 # local via Ollama
+mem = DoryMemory(                                           # Claude
+    extract_model="claude-haiku-4-5-20251001",
+    extract_backend="anthropic",
+    extract_api_key="sk-ant-...",
+)
+mem = DoryMemory(                                           # GPT / Grok / any compat
+    extract_model="gpt-4o-mini",
+    extract_backend="openai",
+    extract_api_key="sk-...",
+)
+
+# --- Query context at session start ---
+context = mem.query("menu endpoint authentication")   # inject into system prompt
+
+# --- Or build API-ready messages with prompt caching ---
+result = mem.build_context("menu endpoint authentication")
+messages = result.as_anthropic_messages(user_query)   # Anthropic SDK w/ cache_control
+messages = result.as_openai_messages(user_query)      # OpenAI / compat
+
+# --- Log turns during the session ---
+mem.add_turn("user", "I'm working on AllergyFind today, need to add a menu endpoint")
+mem.add_turn("assistant", "What authentication approach are you using?")
+
+# --- Or add memories manually ---
+mem.observe("User prefers JWT for API auth", node_type="PREFERENCE")
+
+# --- End of session: extract, consolidate, decay ---
+stats = mem.flush()
+```
+
+### MCP server (Claude Code / Claude Desktop)
+
+```bash
+pip install 'dory-ai[mcp]'
+
+# Register globally across all Claude Code projects
+claude mcp add --scope user dory -- dory-mcp
+
+# Or with a specific DB path
+claude mcp add --scope user dory -- dory-mcp --db /path/to/engram.db
+```
+
+Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_visualize`, `dory_stats`.
+
+---
+
+### Advanced: direct pipeline access
+
+```python
 from dory import Graph, Observer, Prefixer
 
-graph = Graph()  # reads/writes to ./dory.db
-
-# --- During a session: log turns ---
+graph = Graph("myapp.db")
 obs = Observer(graph, backend="ollama", model="qwen3:14b")
-obs.add_turn("user", "I'm working on AllergyFind today, need to add a menu endpoint")
-obs.add_turn("assistant", "What authentication approach are you using?")
-
-# --- Before each LLM call: inject context ---
 p = Prefixer(graph)
-result = p.build("menu endpoint authentication")
-
-# Plain injection
-system_prompt = result.full
-
-# Anthropic API with cache_control (stable prefix cached automatically)
-messages = result.as_anthropic_messages(user_query)
-
-# OpenAI-compatible (Ollama, llama.cpp, Clanker, etc.)
-messages = result.as_openai_messages(user_query, system="You are a helpful assistant.")
-
-# --- End of session: extract memories + consolidate ---
-obs.flush()
+# ... same as DoryMemory but with full control
 ```
 
 ---
@@ -89,7 +125,7 @@ High-salience nodes become **core memories** — they anchor the stable context 
 
 Every N conversation turns (configurable), the Observer calls a local LLM to extract structured memories from the raw conversation. Extractions have confidence scores — anything below the threshold is logged but not written to the graph, guarding against false memory.
 
-Backends: Ollama (default) or any OpenAI-compatible endpoint (llama.cpp, Clanker, vLLM, etc.).
+Backends: Ollama (default), Anthropic (Claude), or any OpenAI-compatible endpoint (llama.cpp, Clanker, vLLM, GPT, Grok, etc.).
 
 ### Prefixer
 
@@ -125,19 +161,20 @@ Finds near-duplicate nodes (Jaccard similarity), merges them keeping the higher-
 
 ```
 dory/
-├── core/
-│   graph.py          ← nodes, edges, spreading activation, salience
-│   schema.py         ← NodeType, EdgeType, zone constants
-│   activation.py     ← spreading activation engine
-│   consolidation.py  ← edge decay, strengthen, prune, promote/demote core
+├── graph.py          ← nodes, edges, salience computation
+├── schema.py         ← NodeType, EdgeType, zone constants
+├── activation.py     ← spreading activation engine
+├── consolidation.py  ← edge decay, strengthen, prune, promote/demote core
+├── memory.py         ← DoryMemory — the high-level drop-in API
+├── visualize.py      ← D3.js interactive graph visualization
+├── mcp_server.py     ← MCP tools (dory_query, dory_observe, dory_consolidate, …)
+├── store.py          ← SQLite backend (nodes, edges, FTS5, observations)
 │
-├── pipeline/
-│   observer.py       ← LLM extraction of memories from conversation turns
-│   prefixer.py       ← stable prefix + dynamic suffix builder
-│   decayer.py        ← node decay scoring + zone management
-│   reflector.py      ← dedup, supersession, observation compression
-│
-└── store.py          ← SQLite backend (nodes, edges, FTS5, observations)
+└── pipeline/
+    ├── observer.py   ← LLM extraction of memories from conversation turns
+    ├── prefixer.py   ← stable prefix + dynamic suffix builder
+    ├── decayer.py    ← node decay scoring + zone management
+    └── reflector.py  ← dedup, supersession, observation compression
 ```
 
 ---
@@ -194,7 +231,7 @@ Nothing is ever deleted. Archived nodes retain full provenance and can be restor
 
 ## Roadmap
 
-- [ ] MCP server — expose Dory memory as MCP tools for Claude Code / Claude Desktop
+- [x] MCP server — expose Dory memory as MCP tools for Claude Code / Claude Desktop
 - [ ] LangChain adapter
 - [ ] LangGraph adapter
 - [ ] Procedural memory (skill accumulation)

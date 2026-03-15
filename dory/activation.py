@@ -59,6 +59,8 @@ def spread(
     activation: dict[str, float] = {sid: 1.0 for sid in seed_ids}
     frontier: dict[str, float] = dict(activation)
 
+    traversed_edges: set[str] = set()
+
     for _ in range(depth):
         next_frontier: dict[str, float] = {}
         for node_id, level in frontier.items():
@@ -68,6 +70,7 @@ def spread(
                 )
                 received = level * edge.weight * depth_decay
                 if received >= threshold:
+                    traversed_edges.add(edge.id)
                     current = activation.get(neighbor_id, 0.0)
                     new_val = min(1.0, current + received)
                     if new_val > current:
@@ -77,7 +80,7 @@ def spread(
         if not frontier:
             break
 
-    # Record activation on touched nodes
+    # Record activation on touched nodes and traversed edges
     now = now_iso()
     for node_id, level in activation.items():
         if level >= threshold:
@@ -85,6 +88,11 @@ def spread(
             if node:
                 node.activation_count += 1
                 node.last_activated = now
+
+    for edge in graph.all_edges():
+        if edge.id in traversed_edges:
+            edge.activation_count += 1
+            edge.last_activated = now
 
     return {nid: v for nid, v in activation.items() if v >= threshold}
 

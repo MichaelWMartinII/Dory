@@ -230,12 +230,15 @@ class Prefixer:
         for n in core:
             by_type.setdefault(n.type.value, []).append(n)
 
-        type_order = ["ENTITY", "CONCEPT", "PREFERENCE", "BELIEF", "EVENT"]
-        for t in type_order:
+        type_labels = {
+            "ENTITY": "Entities", "CONCEPT": "Concepts",
+            "PREFERENCE": "Preferences", "BELIEF": "Beliefs", "EVENT": "Events",
+        }
+        for t in ("ENTITY", "CONCEPT", "PREFERENCE", "BELIEF", "EVENT"):
             nodes = by_type.get(t, [])
             if not nodes:
                 continue
-            lines.append(f"\n### {t.title()}s")
+            lines.append(f"\n### {type_labels[t]}")
             for n in nodes:
                 lines.append(f"- {n.content}")
 

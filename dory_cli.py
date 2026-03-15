@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Engram CLI — session-based graph memory for Claude Code.
+Dory CLI — session-based graph memory for AI agents.
 
 Usage:
-  python engram_cli.py query "AllergyFind database"
-  python engram_cli.py observe CONCEPT "Michael prefers Apache 2.0 licenses"
-  python engram_cli.py link <src_id> <tgt_id> USES
-  python engram_cli.py list [--type CONCEPT]
-  python engram_cli.py show
-  python engram_cli.py consolidate
+  python dory_cli.py query "AllergyFind database"
+  python dory_cli.py observe CONCEPT "Michael prefers Apache 2.0 licenses"
+  python dory_cli.py link <src_id> <tgt_id> USES
+  python dory_cli.py list [--type CONCEPT]
+  python dory_cli.py show
+  python dory_cli.py consolidate
 """
 
 import argparse
@@ -35,6 +35,7 @@ def cmd_observe(args, graph: Graph) -> None:
         sys.exit(1)
     tags = args.tags.split(",") if args.tags else []
     node_id = session.observe(" ".join(args.content), node_type, graph, tags=tags)
+    graph.save()
     print(f"Added node {node_id}: {' '.join(args.content)}")
 
 
@@ -89,17 +90,39 @@ def cmd_show(args, graph: Graph) -> None:
             print(f"  [{n.type.value}] {n.content}  (salience={n.salience:.2f})")
 
 
+def cmd_visualize(args, graph: Graph) -> None:
+    from dory.visualize import open_visualization
+    from dory.schema import ZONE_ARCHIVED, ZONE_EXPIRED
+    zones = ["active"]
+    if args.archived:
+        zones.append(ZONE_ARCHIVED)
+    if args.expired:
+        zones.append(ZONE_EXPIRED)
+    output_path = open_visualization(
+        graph,
+        output_path=args.output,
+        zones=zones,
+        open_browser=not args.no_open,
+    )
+    print(f"Visualization saved to: {output_path}")
+
+
 def cmd_consolidate(args, graph: Graph) -> None:
     result = session.end_session(graph)
     print(f"Consolidation complete:")
-    print(f"  Pruned edges:   {result['pruned_edges']}")
-    print(f"  Promoted core:  {result['promoted_core']}")
-    print(f"  Demoted core:   {result['demoted_core']}")
+    print(f"  Pruned edges:      {result['pruned_edges']}")
+    print(f"  Promoted core:     {result['promoted_core']}")
+    print(f"  Demoted core:      {result['demoted_core']}")
+    print(f"  Archived nodes:    {result['archived_nodes']}")
+    print(f"  Expired nodes:     {result['expired_nodes']}")
+    print(f"  Restored nodes:    {result['restored_nodes']}")
+    print(f"  Duplicates merged: {result['duplicates_merged']}")
+    print(f"  Supersessions:     {result['supersessions']}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Engram — graph memory CLI for Claude Code sessions"
+        description="Dory — graph memory CLI for AI agent sessions"
     )
     parser.add_argument(
         "--graph",
@@ -132,6 +155,13 @@ def main() -> None:
     # show
     sub.add_parser("show", help="Show graph stats and core memories")
 
+    # visualize
+    p_viz = sub.add_parser("visualize", help="Open an interactive graph visualization in the browser")
+    p_viz.add_argument("--output", type=lambda p: Path(p), default=None, help="Save HTML to this path instead of a temp file")
+    p_viz.add_argument("--archived", action="store_true", help="Include archived nodes")
+    p_viz.add_argument("--expired",  action="store_true", help="Include expired nodes")
+    p_viz.add_argument("--no-open",  action="store_true", help="Save the file but don't open the browser")
+
     # consolidate
     sub.add_parser("consolidate", help="Run end-of-session consolidation")
 
@@ -147,6 +177,7 @@ def main() -> None:
         "link": cmd_link,
         "list": cmd_list,
         "show": cmd_show,
+        "visualize": cmd_visualize,
         "consolidate": cmd_consolidate,
     }
     dispatch[args.command](args, graph)
