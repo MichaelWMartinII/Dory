@@ -1,0 +1,9 @@
+# LongMemEval official repo (clone separately)
+LongMemEval/
+
+# Dataset files (download separately via huggingface-cli)
+data/
+
+# Prediction outputs and eval results
+*.jsonl
+*.jsonl.*
