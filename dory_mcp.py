@@ -27,7 +27,7 @@ Configure in Claude Code:
 
   claude mcp add dory -- dory-mcp --db /path/to/your/engram.db
 
-After pip install dory-ai[mcp], the `dory-mcp` script is available on PATH.
+After pip install dory-memory[mcp], the `dory-mcp` script is available on PATH.
 """
 
 import argparse
