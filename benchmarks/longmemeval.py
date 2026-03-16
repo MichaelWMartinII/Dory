@@ -220,7 +220,7 @@ def run_item(
         if verbose:
             print(f"    [{question_id}] raw context ({len(context)} chars)")
 
-    # Generate answer
+    # Generate answer — re-raise credit/auth errors so the caller can abort
     try:
         if backend == "ollama":
             answer = _answer_ollama(question, context, answer_model)
@@ -229,6 +229,9 @@ def run_item(
         else:
             answer = _answer_openai(question, context, answer_model, base_url, api_key)
     except Exception as e:
+        err = str(e).lower()
+        if "credit" in err or "billing" in err or "insufficient" in err or "balance" in err:
+            raise  # propagate so main loop aborts cleanly
         answer = f"ERROR: {e}"
 
     return {
@@ -316,6 +319,12 @@ def main() -> None:
                     verbose=args.verbose,
                 )
             except Exception as e:
+                err = str(e).lower()
+                if "credit" in err or "billing" in err or "insufficient" in err or "balance" in err:
+                    print(f"\n\nOut of credits — stopping at {total} questions.")
+                    print("Add credits at console.anthropic.com/settings/billing")
+                    print(f"Resume with: --resume (already wrote {total} predictions)")
+                    break
                 result = {"question_id": qid, "hypothesis": f"ERROR: {e}"}
                 errors += 1
 
