@@ -232,6 +232,7 @@ Nothing is ever deleted. Archived nodes retain full provenance and can be restor
 ## Roadmap
 
 - [x] MCP server — expose Dory memory as MCP tools for Claude Code / Claude Desktop
+- [ ] Episodic layer — store compressed session summaries alongside the semantic graph, enabling recall of specific in-session events (currently filtered by design; needed for full LongMemEval coverage)
 - [ ] LangChain adapter
 - [ ] LangGraph adapter
 - [ ] Procedural memory (skill accumulation)
@@ -247,7 +248,7 @@ Dory draws from:
 - [Zep: A Temporal Knowledge Graph Architecture](https://arxiv.org/abs/2501.13956) — bi-temporal provenance
 - [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
 - [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture (Python port)
-- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini)
+- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini). Dory scores 18.4% overall with Haiku for all stages; 47–55% on knowledge-update and preference question types (Dory's target use case). Single-session recall scores 0% because the Observer deliberately discards transient session details — this is a design choice, not a retrieval failure. Adding an episodic layer is on the roadmap.
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
 
