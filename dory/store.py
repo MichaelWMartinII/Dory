@@ -170,15 +170,31 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
 
 def search_fts(query: str, path: Path = DEFAULT_GRAPH_PATH, limit: int = 20) -> list[str]:
     """BM25 full-text search. Returns node IDs ranked by relevance."""
+    import re
+    # Strip FTS5 operators/special chars that cause OperationalError
+    safe_query = re.sub(r'["\(\)\*\:\^]', " ", query).strip()
+    if not safe_query:
+        return []
     conn = _connect(path)
     try:
         rows = conn.execute(
             "SELECT id FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?",
-            (query, limit),
+            (safe_query, limit),
         ).fetchall()
         return [r["id"] for r in rows]
     except sqlite3.OperationalError:
-        return []
+        # Last-resort fallback: strip to plain words only
+        plain = " OR ".join(re.findall(r"[a-zA-Z]\w{2,}", safe_query)[:8])
+        if not plain:
+            return []
+        try:
+            rows = conn.execute(
+                "SELECT id FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?",
+                (plain, limit),
+            ).fetchall()
+            return [r["id"] for r in rows]
+        except sqlite3.OperationalError:
+            return []
     finally:
         conn.close()
 

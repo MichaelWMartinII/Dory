@@ -17,6 +17,37 @@ def _fmt_date(iso: str | None) -> str:
         return ""
 
 
+_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "have", "has",
+    "had", "do", "does", "did", "will", "would", "should", "may", "might",
+    "can", "could", "to", "of", "in", "on", "at", "for", "with", "by", "from",
+    "as", "and", "or", "but", "not", "this", "that", "it", "its", "also",
+    "more", "than", "just", "very", "all", "any", "one", "two", "get",
+    "use", "uses", "used", "using", "new", "add", "i", "my", "me", "you",
+    "your", "we", "our", "what", "which", "who", "when", "where", "how",
+    "first", "last", "did", "after", "before", "about",
+})
+
+
+def _fts_query(text: str, n: int = 8) -> str:
+    """
+    Extract meaningful terms from text for FTS5, joined with OR.
+    OR mode gives much better recall than FTS5's default AND.
+    """
+    import re
+    words = re.findall(r"[a-zA-Z]\w*", text)
+    seen: set[str] = set()
+    terms = []
+    for w in words:
+        lo = w.lower()
+        if len(lo) >= 3 and lo not in _STOPWORDS and lo not in seen:
+            seen.add(lo)
+            terms.append(lo)
+            if len(terms) >= n:
+                break
+    return " OR ".join(terms) if terms else text
+
+
 def find_seeds(query: str, graph: Graph) -> list[str]:
     """
     Return node IDs ranked by relevance to the query.
@@ -32,8 +63,8 @@ def find_seeds(query: str, graph: Graph) -> list[str]:
 
     seen: dict[str, int] = {}  # node_id → score (lower = better rank)
 
-    # 1. FTS BM25
-    fts_ids = store.search_fts(query, graph.path)
+    # 1. FTS BM25 — use OR over key terms for recall (avoids AND-mode over-constraining)
+    fts_ids = store.search_fts(_fts_query(query), graph.path)
     for rank, nid in enumerate(fts_ids):
         if nid in graph._nodes:
             seen[nid] = rank

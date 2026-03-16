@@ -65,9 +65,9 @@ def query(topic: str, graph: Graph) -> str:
     seeds = act.find_seeds(topic, graph)
     if not seeds:
         return f"(no memories found for: {topic!r})"
-    activated = act.spread(seeds[:5], graph)
+    activated = act.spread(seeds[:8], graph)
     graph._recompute_salience()
-    return act.serialize(activated, graph)
+    return act.serialize(activated, graph, max_nodes=25)
 
 
 def observe(
