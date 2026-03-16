@@ -34,13 +34,24 @@ Usage:
 
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from ..graph import Graph
-from ..schema import Node
+from ..schema import Node, EdgeType
 from .. import store
 from .. import activation as act
+
+
+def _fmt_date(iso: str | None) -> str:
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -232,21 +243,32 @@ class Prefixer:
 
         type_labels = {
             "ENTITY": "Entities", "CONCEPT": "Concepts",
-            "PREFERENCE": "Preferences", "BELIEF": "Beliefs", "EVENT": "Events",
+            "PREFERENCE": "Preferences", "BELIEF": "Beliefs",
+            "EVENT": "Events", "SESSION": "Past sessions",
         }
-        for t in ("ENTITY", "CONCEPT", "PREFERENCE", "BELIEF", "EVENT"):
+        for t in ("ENTITY", "CONCEPT", "PREFERENCE", "BELIEF", "EVENT", "SESSION"):
             nodes = by_type.get(t, [])
             if not nodes:
                 continue
             lines.append(f"\n### {type_labels[t]}")
             for n in nodes:
-                lines.append(f"- {n.content}")
+                date_hint = ""
+                if t in ("EVENT", "SESSION") and n.created_at:
+                    d = _fmt_date(n.created_at)
+                    if d:
+                        date_hint = f" ({d})"
+                lines.append(f"- {n.content}{date_hint}")
 
         # High-salience non-core
         if non_core:
             lines.append("\n### Supporting context")
             for n in non_core:
-                lines.append(f"- [{n.type.value}] {n.content}")
+                date_hint = ""
+                if n.type.value in ("EVENT", "SESSION") and n.created_at:
+                    d = _fmt_date(n.created_at)
+                    if d:
+                        date_hint = f" ({d})"
+                lines.append(f"- [{n.type.value}]{date_hint} {n.content}")
 
         # Key relationships involving core nodes
         core_ids = {n.id for n in core}
@@ -259,9 +281,16 @@ class Prefixer:
                 if src and tgt:
                     key = (edge.source_id, edge.target_id)
                     if key not in seen:
-                        rel_lines.append(
-                            f"- {src.content} → [{edge.type.value}] → {tgt.content}"
-                        )
+                        if edge.type == EdgeType.SUPERSEDES:
+                            date = _fmt_date(src.superseded_at or edge.created_at)
+                            date_str = f" (updated {date})" if date else ""
+                            rel_lines.append(
+                                f"- [KNOWLEDGE UPDATE{date_str}] Previously: {src.content} → Now: {tgt.content}"
+                            )
+                        else:
+                            rel_lines.append(
+                                f"- {src.content} → [{edge.type.value}] → {tgt.content}"
+                            )
                         seen.add(key)
 
         if rel_lines:
@@ -294,7 +323,12 @@ class Prefixer:
                 for nid, score in ranked:
                     node = self.graph.get_node(nid)
                     if node:
-                        lines.append(f"- [{node.type.value}] {node.content}")
+                        date_hint = ""
+                        if node.type.value in ("EVENT", "SESSION") and node.created_at:
+                            d = _fmt_date(node.created_at)
+                            if d:
+                                date_hint = f" ({d})"
+                        lines.append(f"- [{node.type.value}]{date_hint} {node.content}")
 
                 # Relationships between activated nodes
                 activated_ids = set(activated)
@@ -307,9 +341,16 @@ class Prefixer:
                             src = self.graph.get_node(edge.source_id)
                             tgt = self.graph.get_node(edge.target_id)
                             if src and tgt:
-                                rel_lines.append(
-                                    f"- {src.content} → [{edge.type.value}] → {tgt.content}"
-                                )
+                                if edge.type == EdgeType.SUPERSEDES:
+                                    date = _fmt_date(src.superseded_at or edge.created_at)
+                                    date_str = f" (updated {date})" if date else ""
+                                    rel_lines.append(
+                                        f"- [KNOWLEDGE UPDATE{date_str}] Previously: {src.content} → Now: {tgt.content}"
+                                    )
+                                else:
+                                    rel_lines.append(
+                                        f"- {src.content} → [{edge.type.value}] → {tgt.content}"
+                                    )
                                 seen.add(key)
                 if rel_lines:
                     lines.append("\n### Relationships")

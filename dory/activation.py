@@ -1,7 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from .graph import Graph
-from .schema import now_iso
+from .schema import now_iso, EdgeType
+
+
+def _fmt_date(iso: str | None) -> str:
+    """Return 'YYYY-MM-DD' from an ISO timestamp, or '' on failure."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
 
 
 def find_seeds(query: str, graph: Graph) -> list[str]:
@@ -117,7 +130,13 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
         if not node:
             continue
         core_marker = " [CORE]" if node.is_core else ""
-        lines.append(f"- [{node.type.value}{core_marker}] {node.content}")
+        # Show date for EVENT and SESSION nodes; omit for timeless facts
+        date_hint = ""
+        if node.type.value in ("EVENT", "SESSION") and node.created_at:
+            d = _fmt_date(node.created_at)
+            if d:
+                date_hint = f" ({d})"
+        lines.append(f"- [{node.type.value}{core_marker}]{date_hint} {node.content}")
 
     # Include edges between activated nodes
     activated_ids = set(activated)
@@ -130,9 +149,16 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
                 src = graph.get_node(edge.source_id)
                 tgt = graph.get_node(edge.target_id)
                 if src and tgt:
-                    edge_lines.append(
-                        f"  {src.content} --[{edge.type.value}]--> {tgt.content}"
-                    )
+                    if edge.type == EdgeType.SUPERSEDES:
+                        date = _fmt_date(src.superseded_at or edge.created_at)
+                        date_str = f" (updated {date})" if date else ""
+                        edge_lines.append(
+                            f"  [KNOWLEDGE UPDATE{date_str}] Previously: {src.content} → Now: {tgt.content}"
+                        )
+                    else:
+                        edge_lines.append(
+                            f"  {src.content} --[{edge.type.value}]--> {tgt.content}"
+                        )
                     seen.add(key)
 
     result = "Activated memories:\n" + "\n".join(lines)

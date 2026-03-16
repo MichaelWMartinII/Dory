@@ -144,6 +144,7 @@ def run_item(
     """
     from dory.graph import Graph
     from dory.pipeline.observer import Observer
+    from dory.pipeline.summarizer import Summarizer
     from dory import session
 
     question_id = item.get("question_id") or item.get("id", "unknown")
@@ -181,11 +182,35 @@ def run_item(
                     obs.add_turn(role, content)
 
             obs.flush()
+
+            # Episodic layer: summarize each session individually so
+            # single-session questions ("what did you do in session X?") are answerable
+            for session_data in sessions:
+                session_turns: list[dict] = []
+                if isinstance(session_data, list):
+                    session_turns = [
+                        t for t in session_data
+                        if isinstance(t, dict) and t.get("content")
+                    ]
+                elif isinstance(session_data, dict) and session_data.get("content"):
+                    session_turns = [session_data]
+
+                if session_turns:
+                    summ = Summarizer(
+                        g,
+                        model=extract_model,
+                        backend=backend,
+                        base_url=base_url,
+                        api_key=api_key,
+                    )
+                    summ.summarize(session_turns)
+
             context = session.query(question, g)
             g.save()
 
             if verbose:
-                print(f"    [{question_id}] {len(g.all_nodes())} nodes extracted")
+                session_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION")
+                print(f"    [{question_id}] {len(g.all_nodes())} nodes ({session_nodes} sessions)")
     else:
         # Baseline: raw conversation as context (no extraction, one API call)
         context = "Conversation history:\n" + "\n".join(
