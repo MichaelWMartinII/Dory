@@ -243,9 +243,9 @@ def main():
     ✓  Zero required dependencies — works offline
 
   Install:
-    pip install dory-ai                  # core only
-    pip install dory-ai[ollama]          # + LLM extraction
-    pip install dory-ai[full]            # + vector search
+    pip install dory-memory                  # core only
+    pip install dory-memory[ollama]          # + LLM extraction
+    pip install dory-memory[full]            # + vector search
 
   GitHub: https://github.com/MichaelWMartinII/Dory
 {'─' * W}
