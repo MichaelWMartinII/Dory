@@ -4,7 +4,7 @@
 
 Named after the fish with no short-term memory — because that's your AI agent right now.
 
-Dory is a Python-native, local-first **knowledge graph** memory library for AI agents. Drop it into any LLM pipeline and your agent stops forgetting between sessions.
+Dory is a Python-native, local-first knowledge graph based memory library for AI agents. Drop it into any LLM pipeline and your agent stops forgetting between sessions.
 
 ```python
 pip install dory-memory
