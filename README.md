@@ -95,6 +95,76 @@ Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_
 
 ---
 
+### Framework adapters
+
+**LangChain** — drop-in `BaseMemory` replacement:
+
+```python
+from dory.adapters.langchain import DoryMemoryAdapter
+from langchain.chains import ConversationChain
+from langchain_anthropic import ChatAnthropic
+
+memory = DoryMemoryAdapter(
+    extract_model="claude-haiku-4-5-20251001",
+    extract_backend="anthropic",
+    extract_api_key="sk-ant-...",
+)
+chain = ConversationChain(llm=ChatAnthropic(model="claude-sonnet-4-6"), memory=memory)
+```
+
+**LangGraph** — graph nodes with the `(state) -> state` signature:
+
+```python
+from dory.adapters.langgraph import DoryMemoryNode, MemoryState
+from langgraph.graph import StateGraph, START, END
+
+mem = DoryMemoryNode(extract_model="claude-haiku-4-5-20251001", extract_backend="anthropic")
+
+builder = StateGraph(MemoryState)
+builder.add_node("load_memory", mem.load_context)   # or mem.aload_context for async
+builder.add_node("record_turn", mem.record_turn)
+builder.add_edge(START, "load_memory")
+builder.add_edge("load_memory", "record_turn")
+builder.add_edge("record_turn", END)
+graph = builder.compile()
+```
+
+**Multi-agent** — shared memory pool with thread-safe writes and agent attribution:
+
+```python
+from dory.adapters.multi_agent import SharedMemoryPool
+
+pool = SharedMemoryPool(db_path="shared.db")
+pool.observe("User prefers dark mode", agent_id="agent-1")
+pool.add_turn("user", "Let's ship it", agent_id="agent-2", session_id="s1")
+results = pool.query("UI preferences")
+agent_nodes = pool.get_agent_nodes("agent-1")
+```
+
+### Async API
+
+All `DoryMemory` methods have async counterparts — safe to await from FastAPI, LangGraph, and any async framework:
+
+```python
+context = await mem.aquery("current topic")
+result  = await mem.abuild_context("current topic")
+await mem.aadd_turn("user", "message")
+node_id = await mem.aobserve("User prefers JWT", node_type="PREFERENCE")
+stats   = await mem.aflush()
+```
+
+### Export / import
+
+```python
+from dory.export.jsonld import JSONLDExporter
+
+exporter = JSONLDExporter(graph)
+exporter.export("memory.jsonld.json")           # write to file
+data = exporter.export()                         # or get dict
+
+JSONLDExporter.import_into(graph, "memory.jsonld.json")   # round-trip import
+```
+
 ### Advanced: direct pipeline access
 
 ```python
@@ -112,7 +182,7 @@ p = Prefixer(graph)
 
 ### Memory graph
 
-Every piece of information is a node. Nodes have types: `ENTITY`, `CONCEPT`, `EVENT`, `PREFERENCE`, `BELIEF`. Edges between them are typed and weighted: `USES`, `WORKS_ON`, `PREFERS`, `SUPERSEDES`, `CO_OCCURS`, etc.
+Every piece of information is a node. Nodes have types: `ENTITY`, `CONCEPT`, `EVENT`, `PREFERENCE`, `BELIEF`, `PROCEDURE`. Edges between them are typed and weighted: `USES`, `WORKS_ON`, `PREFERS`, `SUPERSEDES`, `CO_OCCURS`, etc.
 
 Salience is computed, not assigned:
 ```
@@ -166,17 +236,25 @@ dory/
 ├── activation.py     ← spreading activation engine
 ├── consolidation.py  ← edge decay, strengthen, prune, promote/demote core
 ├── session.py        ← session-level helpers: query, observe, write_turn, end_session
-├── memory.py         ← DoryMemory — the high-level drop-in API
+├── memory.py         ← DoryMemory — the high-level drop-in API (sync + async)
 ├── visualize.py      ← D3.js interactive graph visualization
 ├── mcp_server.py     ← MCP tools (dory_query, dory_observe, dory_consolidate, …)
 ├── store.py          ← SQLite backend (nodes, edges, FTS5, observations)
 │
-└── pipeline/
-    ├── observer.py   ← LLM extraction of memories from conversation turns
-    ├── summarizer.py ← episodic layer: SESSION nodes from conversation turns
-    ├── prefixer.py   ← stable prefix + dynamic suffix builder
-    ├── decayer.py    ← node decay scoring + zone management
-    └── reflector.py  ← dedup, supersession, observation compression
+├── pipeline/
+│   ├── observer.py   ← LLM extraction of memories from conversation turns
+│   ├── summarizer.py ← episodic layer: SESSION nodes from conversation turns
+│   ├── prefixer.py   ← stable prefix + dynamic suffix builder
+│   ├── decayer.py    ← node decay scoring + zone management
+│   └── reflector.py  ← dedup, supersession, observation compression
+│
+├── adapters/
+│   ├── langchain.py   ← DoryMemoryAdapter — LangChain BaseMemory drop-in
+│   ├── langgraph.py   ← DoryMemoryNode — LangGraph StateGraph nodes
+│   └── multi_agent.py ← SharedMemoryPool — thread-safe multi-agent memory
+│
+└── export/
+    └── jsonld.py      ← JSONLDExporter — portable JSON-LD round-trip
 ```
 
 ---
