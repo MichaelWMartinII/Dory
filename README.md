@@ -223,7 +223,7 @@ Nodes below the active floor → archived. Below the archive floor → expired. 
 
 ### Reflector
 
-Finds near-duplicate nodes (Jaccard similarity), merges them keeping the higher-salience one. Detects supersession (same subject, newer fact), archives the old node, and adds a `SUPERSEDES` provenance edge. Old observations are compressed into summaries.
+Finds near-duplicate nodes (Jaccard similarity ≥ 0.82, empirically tuned), merges them keeping the higher-salience one. Detects supersession — same subject, newer fact, Jaccard in [0.45, 0.82) — archives the old node, and adds a `SUPERSEDES` provenance edge. Old observations are compressed into summaries. Dedup thresholds are practical defaults chosen conservatively; sensitivity analysis is planned.
 
 ---
 
@@ -291,7 +291,7 @@ Vector search activates automatically once `nomic-embed-text` is available. Fall
 | `archived` | Invisible to normal queries | `graph.all_nodes(zone="archived")` |
 | `expired` | Completely invisible | `graph.all_nodes(zone=None)` |
 
-Nothing is ever deleted. Archived nodes retain full provenance and can be restored if reactivated.
+User-meaningful memory is never deleted by forgetting — archived and expired nodes retain full provenance and can be restored if reactivated. The one exception: exact structural duplicates detected by the Reflector are hard-merged (the lower-salience copy is removed, all its edges are rewired to the winner).
 
 ---
 
@@ -328,7 +328,10 @@ Dory draws from:
 - [Zep: A Temporal Knowledge Graph Architecture](https://arxiv.org/abs/2501.13956) — bi-temporal provenance
 - [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
 - [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture (Python port)
-- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini). Dory scores **54.4% overall with Haiku** (extract + answer), up from 18.4% before the episodic layer. Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%. With Sonnet for extraction: temporal-reasoning reaches **64.0%** on a 50-question sample, multi-session reaches **76.0%** on a 25-question sample. Full Sonnet run pending.
+- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini).
+  - **Measured — full 500-question run, Haiku extract + Haiku answer:** 54.4% overall (up from 18.4% pre-episodic layer). Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%.
+  - **Measured — spot checks with Sonnet extraction:** temporal-reasoning 64.0% (50-question sample), multi-session 76.0% (25-question sample).
+  - **Pending:** full 500-question run with Sonnet extraction.
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
 
