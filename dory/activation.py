@@ -29,22 +29,35 @@ _STOPWORDS = frozenset({
 })
 
 
-def _fts_query(text: str, n: int = 8) -> str:
+def _fts_query(text: str, n: int = 10) -> str:
     """
     Extract meaningful terms from text for FTS5, joined with OR.
     OR mode gives much better recall than FTS5's default AND.
+    Includes numeric tokens (years, day numbers) for date matching.
     """
     import re
-    words = re.findall(r"[a-zA-Z]\w*", text)
+    # Alpha tokens (words)
+    alpha = re.findall(r"[a-zA-Z]\w*", text)
+    # Numeric tokens: extract raw digit sequences (1-4 digits) — captures years, day
+    # numbers, and ordinals like "15th" (extracts "15"). Longer numbers are ignored.
+    numeric = [m for m in re.findall(r"\d+", text) if 1 <= len(m) <= 4]
+
     seen: set[str] = set()
     terms = []
-    for w in words:
+
+    for w in alpha:
         lo = w.lower()
         if len(lo) >= 3 and lo not in _STOPWORDS and lo not in seen:
             seen.add(lo)
             terms.append(lo)
             if len(terms) >= n:
                 break
+
+    for num in numeric:
+        if num not in seen:
+            seen.add(num)
+            terms.append(num)
+
     return " OR ".join(terms) if terms else text
 
 
@@ -161,9 +174,11 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
         if not node:
             continue
         core_marker = " [CORE]" if node.is_core else ""
-        # Show date for EVENT and SESSION nodes; omit for timeless facts
+        # SESSION nodes already embed the date in their content as "[YYYY-MM-DD] Session: ..."
+        # so we don't add a redundant (and potentially wrong) date hint for them.
+        # EVENT nodes still get the hint from created_at.
         date_hint = ""
-        if node.type.value in ("EVENT", "SESSION") and node.created_at:
+        if node.type.value == "EVENT" and node.created_at:
             d = _fmt_date(node.created_at)
             if d:
                 date_hint = f" ({d})"

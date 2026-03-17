@@ -37,24 +37,26 @@ from ..schema import NodeType, EdgeType, new_id, now_iso
 
 _SYSTEM_PROMPT = """You are an episodic memory system for an AI agent.
 
-Summarize this conversation as a single episodic memory. Unlike semantic
-memory extraction, do NOT filter for long-term relevance. Capture everything:
+Your job is to capture a session as a detailed, queryable memory. Do NOT filter
+for long-term relevance — preserve everything specific that could answer a future
+question like "what did the assistant say about X?" or "what happened on date Y?".
 
-- What topics were discussed
-- Key facts, names, dates, quantities, and events mentioned
-- What the user was working on, asking about, or experiencing
-- What the assistant said, recommended, or provided
-- Any decisions made, outcomes reached, or preferences expressed
-- Specific details that would answer "what happened in this session?"
+Write a detailed summary that explicitly includes:
+- SPECIFIC names of people, places, products, brands, and organizations
+- SPECIFIC numbers, quantities, measurements, prices, scores, and dates
+- EXACT items in any list, schedule, table, or set (do not summarize as "several items")
+- What the assistant specifically said, recommended, created, or provided
+- What the user did, decided, experienced, or asked for
+- Outcomes, results, and concrete next steps
 
 Return ONLY valid JSON:
 {
-  "summary": "2-5 sentence episodic summary of the session",
+  "summary": "detailed paragraph preserving all specific facts from the session",
   "topics": ["topic1", "topic2"],
   "session_date": "YYYY-MM-DD if clearly stated in the conversation, else null"
 }"""
 
-_USER_TEMPLATE = """Summarize this conversation as an episodic memory:
+_USER_TEMPLATE = """Capture this conversation as a detailed episodic memory. Preserve every specific name, number, item, and recommendation — do not compress or omit specifics:
 
 {turns}"""
 
@@ -109,7 +111,7 @@ def _call_anthropic(turns_text: str, model: str, api_key: str) -> dict | None:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model=model,
-            max_tokens=512,
+            max_tokens=1024,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)}],
         )
@@ -216,9 +218,19 @@ class Summarizer:
             content,
             tags=["episodic", "session"] + topics,
         )
-        ts = now_iso()
-        node.created_at = ts
-        node.last_activated = ts
+        # Use the actual session date for created_at so serialize() shows the right date.
+        # Fall back to now() if no date is available.
+        if date:
+            try:
+                from datetime import datetime, timezone
+                node.created_at = datetime.strptime(date, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                ).isoformat()
+            except Exception:
+                node.created_at = now_iso()
+        else:
+            node.created_at = now_iso()
+        node.last_activated = now_iso()
 
         # Link to semantic nodes via CO_OCCURS so spreading activation reaches them
         self._link_to_semantic(node.id, summary + " " + " ".join(topics))

@@ -61,13 +61,23 @@ def query(topic: str, graph: Graph) -> str:
     """
     Query the graph for context relevant to a topic.
     Returns a context block suitable for injecting into a prompt.
+
+    All SESSION nodes are always included — they hold episodic detail that
+    may not score highly via spreading activation but is needed for session-
+    level recall and temporal reasoning.
     """
     seeds = act.find_seeds(topic, graph)
-    if not seeds:
-        return f"(no memories found for: {topic!r})"
-    activated = act.spread(seeds[:8], graph)
+    activated: dict[str, float] = {}
+    if seeds:
+        activated = act.spread(seeds[:8], graph)
     graph._recompute_salience()
-    return act.serialize(activated, graph, max_nodes=25)
+
+    # Ensure all SESSION nodes are present (at minimum activation level)
+    for node in graph.all_nodes():
+        if node.type.value == "SESSION" and node.id not in activated:
+            activated[node.id] = 0.1  # low but non-zero so they appear
+
+    return act.serialize(activated, graph, max_nodes=50)
 
 
 def observe(

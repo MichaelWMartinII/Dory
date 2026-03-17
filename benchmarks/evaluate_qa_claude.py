@@ -191,9 +191,9 @@ def evaluate_with_claude(
                     sys.exit(1)
                 except Exception as e:
                     err_str = str(e).lower()
-                    if "credit" in err_str or "billing" in err_str or "insufficient" in err_str:
-                        print(f"\n  Billing error: {e}")
-                        print("  Add credits at console.anthropic.com/settings/billing")
+                    if any(k in err_str for k in ("credit", "billing", "insufficient", "usage limit", "api usage")):
+                        print(f"\n  Billing/limit error: {e}")
+                        print("  Raise your spending limit at console.anthropic.com/settings/limits")
                         sys.exit(1)
                     print(f"\n  Error on {qid}: {e}")
                     label = False

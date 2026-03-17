@@ -45,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # LLM answer generation
 # ---------------------------------------------------------------------------
 
-_ANSWER_PROMPT = """\
+_ANSWER_PROMPT_DEFAULT = """\
 You are answering a question about a person based on their conversation history.
 Use only the provided memory context — do not make up information.
 If the context doesn't contain enough information to answer confidently, say so briefly.
@@ -58,49 +58,104 @@ Question: {question}
 
 Answer:"""
 
+_ANSWER_PROMPT_TEMPORAL = """\
+You are answering a question about the timing or order of events from a person's conversation history.
 
-def _answer_ollama(question: str, context: str, model: str) -> str:
+SESSION memories below have date prefixes like [YYYY-MM-DD]. Use these dates to determine
+order and duration. Show your date comparison explicitly before giving your final answer.
+
+Memory context:
+{context}
+
+Question: {question}
+
+Answer (compare dates explicitly, then give a direct answer):"""
+
+_ANSWER_PROMPT_MULTI_SESSION = """\
+You are answering a question that may require finding information across multiple conversations.
+
+Search ALL memories below — including every SESSION entry. For counting or listing questions,
+find every relevant instance before answering. Do not stop at the first match.
+
+Memory context:
+{context}
+
+Question: {question}
+
+Answer (check all sessions, then give a direct answer):"""
+
+_ANSWER_PROMPT_KNOWLEDGE_UPDATE = """\
+You are answering a question about a person's current situation based on their conversation history.
+
+If you see a [KNOWLEDGE UPDATE] in the memories, use the UPDATED value, not the original.
+Always prefer the most recent information.
+
+Memory context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
+_ANSWER_PROMPT_SESSION = """\
+You are answering a question about what happened or was said in a specific conversation.
+
+The answer is likely in a SESSION memory. Look for the specific detail asked about:
+exact names, numbers, items, colors, recommendations, or things the assistant said.
+
+Memory context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
+_ANSWER_PROMPTS = {
+    "temporal-reasoning": _ANSWER_PROMPT_TEMPORAL,
+    "multi-session": _ANSWER_PROMPT_MULTI_SESSION,
+    "knowledge-update": _ANSWER_PROMPT_KNOWLEDGE_UPDATE,
+    "single-session-user": _ANSWER_PROMPT_SESSION,
+    "single-session-assistant": _ANSWER_PROMPT_SESSION,
+    "single-session-preference": _ANSWER_PROMPT_SESSION,
+}
+
+
+def _get_prompt(question: str, context: str, question_type: str) -> str:
+    template = _ANSWER_PROMPTS.get(question_type, _ANSWER_PROMPT_DEFAULT)
+    return template.format(context=context, question=question)
+
+
+def _answer_ollama(question: str, context: str, model: str, question_type: str = "") -> str:
     import ollama
     resp = ollama.chat(
         model=model,
-        messages=[{"role": "user", "content": _ANSWER_PROMPT.format(
-            context=context, question=question
-        )}],
+        messages=[{"role": "user", "content": _get_prompt(question, context, question_type)}],
         options={"temperature": 0.0},
     )
     return resp["message"]["content"].strip()
 
 
-def _answer_anthropic(question: str, context: str, model: str, api_key: str) -> str:
+def _answer_anthropic(question: str, context: str, model: str, api_key: str, question_type: str = "") -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
     resp = client.messages.create(
         model=model,
-        max_tokens=256,
-        messages=[{"role": "user", "content": _ANSWER_PROMPT.format(
-            context=context, question=question
-        )}],
+        max_tokens=512,
+        messages=[{"role": "user", "content": _get_prompt(question, context, question_type)}],
     )
     return resp.content[0].text.strip()
 
 
-def _answer_openai(question: str, context: str, model: str, base_url: str, api_key: str) -> str:
-    import httpx
-    r = httpx.post(
-        f"{base_url.rstrip('/')}/v1/chat/completions",
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": _ANSWER_PROMPT.format(
-                context=context, question=question
-            )}],
-            "temperature": 0.0,
-            "max_tokens": 256,
-        },
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=60,
+def _answer_openai(question: str, context: str, model: str, base_url: str, api_key: str, question_type: str = "") -> str:
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": _get_prompt(question, context, question_type)}],
+        temperature=0.0,
+        max_tokens=512,
     )
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    return resp.choices[0].message.content.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +204,9 @@ def run_item(
 
     question_id = item.get("question_id") or item.get("id", "unknown")
     question = item.get("question", "")
+    question_type = item.get("question_type", "")
     sessions = item.get("haystack_sessions") or item.get("history", [])
+    haystack_dates = item.get("haystack_dates") or []
 
     # Flatten sessions into turns
     all_turns: list[dict] = []
@@ -185,7 +242,7 @@ def run_item(
 
             # Episodic layer: summarize each session individually so
             # single-session questions ("what did you do in session X?") are answerable
-            for session_data in sessions:
+            for idx, session_data in enumerate(sessions):
                 session_turns: list[dict] = []
                 if isinstance(session_data, list):
                     session_turns = [
@@ -196,6 +253,18 @@ def run_item(
                     session_turns = [session_data]
 
                 if session_turns:
+                    # Parse "2023/04/10 (Mon) 17:50" → "2023-04-10"
+                    raw_date = haystack_dates[idx] if idx < len(haystack_dates) else None
+                    session_date: str | None = None
+                    if raw_date:
+                        try:
+                            from datetime import datetime
+                            session_date = datetime.strptime(
+                                raw_date.split(" (")[0].strip(), "%Y/%m/%d"
+                            ).strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
+
                     summ = Summarizer(
                         g,
                         model=extract_model,
@@ -203,7 +272,7 @@ def run_item(
                         base_url=base_url,
                         api_key=api_key,
                     )
-                    summ.summarize(session_turns)
+                    summ.summarize(session_turns, session_date=session_date)
 
             context = session.query(question, g)
             g.save()
@@ -223,11 +292,11 @@ def run_item(
     # Generate answer — re-raise credit/auth errors so the caller can abort
     try:
         if backend == "ollama":
-            answer = _answer_ollama(question, context, answer_model)
+            answer = _answer_ollama(question, context, answer_model, question_type)
         elif backend == "anthropic":
-            answer = _answer_anthropic(question, context, answer_model, api_key)
+            answer = _answer_anthropic(question, context, answer_model, api_key, question_type)
         else:
-            answer = _answer_openai(question, context, answer_model, base_url, api_key)
+            answer = _answer_openai(question, context, answer_model, base_url, api_key, question_type)
     except Exception as e:
         err = str(e).lower()
         if "credit" in err or "billing" in err or "insufficient" in err or "balance" in err:
