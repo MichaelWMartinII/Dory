@@ -124,6 +124,44 @@ class DoryMemoryNode:
         return {**state, "memory_stats": stats}
 
     # ------------------------------------------------------------------
+    # Async node functions
+    # Same signatures as sync versions — use these when your LangGraph
+    # graph is compiled with async support (graph.ainvoke / astream).
+    # ------------------------------------------------------------------
+
+    async def aload_context(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Async version of load_context()."""
+        query = state.get("query", "")
+        result = await self._dory.abuild_context(query)
+        return {**state, "context": result.full}
+
+    async def arecord_turn(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Async version of record_turn()."""
+        messages = state.get("messages", [])
+        if messages:
+            last = messages[-1]
+            role = last.get("role", "user")
+            content = last.get("content", "")
+            if content:
+                await self._dory.aadd_turn(role, str(content))
+        return state
+
+    async def arecord_exchange(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Async version of record_exchange()."""
+        messages = state.get("messages", [])
+        for msg in messages[-2:]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if content:
+                await self._dory.aadd_turn(role, str(content))
+        return state
+
+    async def aconsolidate(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Async version of consolidate()."""
+        stats = await self._dory.aflush()
+        return {**state, "memory_stats": stats}
+
+    # ------------------------------------------------------------------
     # Direct access
     # ------------------------------------------------------------------
 

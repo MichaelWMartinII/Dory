@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .graph import Graph
@@ -7,6 +9,9 @@ from .schema import NodeType
 from .pipeline.prefixer import Prefixer, PrefixResult
 from .pipeline.observer import Observer
 from . import session as _session, consolidation
+
+# Shared executor for running blocking LLM/DB calls from async contexts.
+_executor = ThreadPoolExecutor()
 
 
 class DoryMemory:
@@ -168,6 +173,45 @@ class DoryMemory:
         consolidation_stats = consolidation.run(self._graph)
         self._prefixer.invalidate()
         return {**extraction_stats, **consolidation_stats}
+
+    # ------------------------------------------------------------------
+    # Async API
+    # All async methods delegate to their sync counterparts via run_in_executor,
+    # so they are safe to await from FastAPI, LangGraph, and other async frameworks
+    # without blocking the event loop.
+    # ------------------------------------------------------------------
+
+    async def aquery(self, topic: str) -> str:
+        """Async version of query()."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_executor, self.query, topic)
+
+    async def abuild_context(self, query: str = "") -> PrefixResult:
+        """Async version of build_context()."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_executor, self.build_context, query)
+
+    async def aadd_turn(self, role: str, content: str) -> None:
+        """Async version of add_turn(). Safe to await when Observer makes LLM calls."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_executor, self.add_turn, role, content)
+
+    async def aobserve(
+        self,
+        content: str,
+        node_type: str = "CONCEPT",
+        tags: list[str] | None = None,
+    ) -> str:
+        """Async version of observe()."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _executor, lambda: self.observe(content, node_type, tags)
+        )
+
+    async def aflush(self) -> dict:
+        """Async version of flush(). Awaitable — LLM extraction runs in thread pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_executor, self.flush)
 
     # ------------------------------------------------------------------
     # Power-user access

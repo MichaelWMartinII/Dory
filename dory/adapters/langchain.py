@@ -104,6 +104,38 @@ class DoryMemoryAdapter:
         self._dory.flush()
 
     # ------------------------------------------------------------------
+    # Async interface
+    # ------------------------------------------------------------------
+
+    async def aload_memory_variables(
+        self, inputs: dict[str, Any]
+    ) -> dict[str, str]:
+        """Async version of load_memory_variables() for use with async chains."""
+        query = inputs.get(self._input_key, "")
+        result = await self._dory.abuild_context(query)
+        return {
+            "context": result.full,
+            "history": self._recent_history(),
+        }
+
+    async def asave_context(
+        self,
+        inputs: dict[str, Any],
+        outputs: dict[str, Any],
+    ) -> None:
+        """Async version of save_context()."""
+        user_msg = str(inputs.get(self._input_key, ""))
+        ai_msg = str(outputs.get(self._output_key, ""))
+        if user_msg:
+            await self._dory.aadd_turn("user", user_msg)
+        if ai_msg:
+            await self._dory.aadd_turn("assistant", ai_msg)
+
+    async def aclear(self) -> None:
+        """Async flush."""
+        await self._dory.aflush()
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
