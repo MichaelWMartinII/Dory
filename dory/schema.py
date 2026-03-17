@@ -13,6 +13,7 @@ class NodeType(str, Enum):
     PREFERENCE = "PREFERENCE"
     BELIEF = "BELIEF"
     SESSION = "SESSION"
+    PROCEDURE = "PROCEDURE"  # step-by-step process, workflow, skill, or algorithm
 
 
 class EdgeType(str, Enum):

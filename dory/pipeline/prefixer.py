@@ -245,8 +245,9 @@ class Prefixer:
             "ENTITY": "Entities", "CONCEPT": "Concepts",
             "PREFERENCE": "Preferences", "BELIEF": "Beliefs",
             "EVENT": "Events", "SESSION": "Past sessions",
+            "PROCEDURE": "Procedures",
         }
-        for t in ("ENTITY", "CONCEPT", "PREFERENCE", "BELIEF", "EVENT", "SESSION"):
+        for t in ("ENTITY", "CONCEPT", "PREFERENCE", "BELIEF", "EVENT", "SESSION", "PROCEDURE"):
             nodes = by_type.get(t, [])
             if not nodes:
                 continue

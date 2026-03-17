@@ -26,7 +26,7 @@ The deeper problem: naive memory injection makes things *worse*. Dumping everyth
 |---|---|---|
 | Episodic | Past events, sessions, experiences | ✓ |
 | Semantic | Facts, preferences, entities, relationships | ✓ |
-| Procedural | Skills and patterns (coming soon) | roadmap |
+| Procedural | Skills, workflows, repeatable processes | ✓ |
 | Working | In-context window (managed by your LLM) | — |
 
 **Spreading activation retrieval** — not vector similarity search. Relevant memories pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred. That's how human memory works.
@@ -235,11 +235,11 @@ Nothing is ever deleted. Archived nodes retain full provenance and can be restor
 
 - [x] MCP server — expose Dory memory as MCP tools for Claude Code / Claude Desktop
 - [x] Episodic layer — Summarizer captures session-level detail alongside semantic graph; SESSION nodes always injected into query context for single-session recall
-- [ ] LangChain adapter
-- [ ] LangGraph adapter
-- [ ] Procedural memory (skill accumulation)
-- [ ] Multi-agent shared memory with conflict-free writes
-- [ ] Portable import/export format (JSON-LD)
+- [x] LangChain adapter — `dory.adapters.langchain.DoryMemoryAdapter` implements `BaseMemory`
+- [x] LangGraph adapter — `dory.adapters.langgraph.DoryMemoryNode` for StateGraph integration
+- [x] Procedural memory — `PROCEDURE` node type for skills, workflows, and repeatable processes
+- [x] Multi-agent shared memory — `dory.adapters.multi_agent.SharedMemoryPool` with thread-safe writes and agent attribution
+- [x] Portable import/export format — `dory.export.jsonld.JSONLDExporter` for JSON-LD round-trips
 
 ---
 

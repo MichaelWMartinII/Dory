@@ -38,7 +38,7 @@ Return ONLY valid JSON matching this schema exactly:
 {
   "nodes": [
     {
-      "type": "ENTITY | CONCEPT | EVENT | PREFERENCE | BELIEF",
+      "type": "ENTITY | CONCEPT | EVENT | PREFERENCE | BELIEF | PROCEDURE",
       "content": "concise natural language description",
       "tags": ["tag1", "tag2"],
       "confidence": 0.0
@@ -60,6 +60,7 @@ Rules:
 - EVENT: something that happened or was decided
 - PREFERENCE: a stated or clearly implied preference or working style
 - BELIEF: an assertion about the world the speaker holds to be true
+- PROCEDURE: a repeatable step-by-step process, workflow, skill, or algorithm the user applies
 - confidence: 0.9+ for explicitly stated facts, 0.7-0.89 for strongly implied, below 0.7 for uncertain
 - Only extract facts that would still be useful in a future unrelated session
 - Skip pleasantries, filler, and transient task details
