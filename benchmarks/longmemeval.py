@@ -380,6 +380,7 @@ def main() -> None:
             if qid in done_ids:
                 continue
 
+            time.sleep(2)  # avoid Sonnet rate limits between questions
             t0 = time.time()
             try:
                 result = run_item(
