@@ -336,7 +336,9 @@ def main() -> None:
     parser.add_argument("--api-key", default="local",
                         help="API key for Anthropic or OpenAI backends")
     parser.add_argument("--limit", type=int, default=None,
-                        help="Only run first N questions (for testing)")
+                        help="Only run N questions (for testing)")
+    parser.add_argument("--offset", type=int, default=0,
+                        help="Start at this index in the dataset (default: 0)")
     parser.add_argument("--resume", action="store_true",
                         help="Skip questions already in output file")
     parser.add_argument("--verbose", action="store_true",
@@ -346,6 +348,8 @@ def main() -> None:
     # Load dataset
     print(f"Loading dataset from {args.data}...")
     items = load_dataset(args.data)
+    if args.offset:
+        items = items[args.offset :]
     if args.limit:
         items = items[: args.limit]
     print(f"  {len(items)} questions")

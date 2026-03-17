@@ -250,7 +250,7 @@ Dory draws from:
 - [Zep: A Temporal Knowledge Graph Architecture](https://arxiv.org/abs/2501.13956) — bi-temporal provenance
 - [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
 - [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture (Python port)
-- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini). Dory scores **54.4% overall with Haiku** (extract + answer), up from 18.4% before the episodic layer. Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%. With Sonnet for extraction, temporal-reasoning reaches **64.0%** on a 50-question sample. Full Sonnet run pending.
+- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini). Dory scores **54.4% overall with Haiku** (extract + answer), up from 18.4% before the episodic layer. Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%. With Sonnet for extraction: temporal-reasoning reaches **64.0%** on a 50-question sample, multi-session reaches **76.0%** on a 25-question sample. Full Sonnet run pending.
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
 

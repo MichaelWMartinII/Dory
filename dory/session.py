@@ -17,6 +17,25 @@ _STOPWORDS = frozenset({
     "use", "uses", "used", "using", "new", "add", "adds", "added",
 })
 
+# Temporal questions ask about order, duration, or relative time between events.
+_TEMPORAL_RE = re.compile(
+    r"\b(before|after|earlier|earliest|later|latest|prior to|"
+    r"how long|how many (?:days?|weeks?|months?|years?)|"
+    r"which (?:one )?(?:came|was|happened) (?:first|last|before|after|earlier|later)|"
+    r"in what order|chronolog|timeline|when did|more recent|duration)\b",
+    re.IGNORECASE,
+)
+
+# Aggregation questions ask for counts or exhaustive lists.
+_AGGREGATION_RE = re.compile(
+    r"\b(how many(?!\s+(?:days?|weeks?|months?|years?))|"
+    r"how (?:often|frequently)|list (?:all|every|each)|"
+    r"all (?:the )?times?|every time|each time|"
+    r"total (?:number|count|times?)|number of times|"
+    r"times (?:did|have|has)|occasions?|instances?)\b",
+    re.IGNORECASE,
+)
+
 
 def _key_terms(content: str, n: int = 12) -> str:
     """Extract up to n meaningful terms from content for FTS querying."""
@@ -31,6 +50,65 @@ def _key_terms(content: str, n: int = 12) -> str:
             if len(result) >= n:
                 break
     return " ".join(result)
+
+
+def _parse_session_date(content: str) -> str:
+    """Extract YYYY-MM-DD from SESSION content like '[2023-04-10] Session: ...'"""
+    m = re.match(r"\[(\d{4}-\d{2}-\d{2})\]", content.strip())
+    return m.group(1) if m else "9999-99-99"  # unknown dates sort last
+
+
+def _temporal_context(graph: Graph, activated: dict[str, float]) -> str:
+    """
+    For temporal questions: SESSION nodes in chronological order, then
+    spread-activated semantic nodes for subject context.
+    """
+    session_nodes = sorted(
+        [n for n in graph.all_nodes() if n.type.value == "SESSION"],
+        key=lambda n: _parse_session_date(n.content),
+    )
+
+    lines = ["SESSION memories (chronological):"]
+    for node in session_nodes:
+        lines.append(f"- {node.content}")
+
+    non_session = sorted(
+        [
+            (nid, lvl) for nid, lvl in activated.items()
+            if graph.get_node(nid) and graph.get_node(nid).type.value != "SESSION"
+        ],
+        key=lambda x: -x[1],
+    )[:20]
+
+    if non_session:
+        lines.append("\nAdditional context:")
+        for nid, _ in non_session:
+            node = graph.get_node(nid)
+            if node:
+                core_marker = " [CORE]" if node.is_core else ""
+                lines.append(f"- [{node.type.value}{core_marker}] {node.content}")
+
+    return "\n".join(lines)
+
+
+def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+    """
+    For counting/listing questions: expand to all FTS matches so every
+    relevant instance is included, not just the top activated nodes.
+    """
+    terms = _key_terms(topic, n=6)
+    if terms:
+        or_query = " OR ".join(terms.split())
+        fts_ids = set(store.search_fts(or_query, graph.path, limit=200))
+    else:
+        fts_ids = set()
+
+    expanded: dict[str, float] = dict(activated)
+    for node in graph.all_nodes():
+        if node.id in fts_ids and node.id not in expanded:
+            expanded[node.id] = 0.3  # above SESSION floor so they appear
+
+    return act.serialize(expanded, graph, max_nodes=100)
 
 
 def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5, weight: float = 0.5) -> int:
@@ -62,9 +140,12 @@ def query(topic: str, graph: Graph) -> str:
     Query the graph for context relevant to a topic.
     Returns a context block suitable for injecting into a prompt.
 
-    All SESSION nodes are always included — they hold episodic detail that
-    may not score highly via spreading activation but is needed for session-
-    level recall and temporal reasoning.
+    Three retrieval modes, selected automatically:
+    - temporal:     chronological SESSION timeline for date/order questions
+    - aggregation:  full-graph FTS scan for counting/listing questions
+    - default:      spreading activation (all other questions)
+
+    All modes ensure SESSION nodes are present for episodic recall.
     """
     seeds = act.find_seeds(topic, graph)
     activated: dict[str, float] = {}
@@ -75,7 +156,13 @@ def query(topic: str, graph: Graph) -> str:
     # Ensure all SESSION nodes are present (at minimum activation level)
     for node in graph.all_nodes():
         if node.type.value == "SESSION" and node.id not in activated:
-            activated[node.id] = 0.1  # low but non-zero so they appear
+            activated[node.id] = 0.1
+
+    if _TEMPORAL_RE.search(topic):
+        return _temporal_context(graph, activated)
+
+    if _AGGREGATION_RE.search(topic):
+        return _aggregation_context(topic, graph, activated)
 
     return act.serialize(activated, graph, max_nodes=50)
 
