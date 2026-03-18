@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     is_core INTEGER DEFAULT 0,
     tags TEXT DEFAULT '[]',
     zone TEXT DEFAULT 'active',
-    superseded_at TEXT
+    superseded_at TEXT,
+    metadata TEXT DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -64,8 +65,12 @@ def _connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
-    # Migrate older DBs that predate zone/superseded_at columns
-    for col, defn in [("zone", "TEXT DEFAULT 'active'"), ("superseded_at", "TEXT")]:
+    # Migrate older DBs that predate zone/superseded_at/metadata columns
+    for col, defn in [
+        ("zone", "TEXT DEFAULT 'active'"),
+        ("superseded_at", "TEXT"),
+        ("metadata", "TEXT DEFAULT '{}'"),
+    ]:
         try:
             conn.execute(f"ALTER TABLE nodes ADD COLUMN {col} {defn}")
             conn.commit()
@@ -82,6 +87,7 @@ def load(path: Path = DEFAULT_GRAPH_PATH) -> dict:
     for n in nodes:
         n["tags"] = json.loads(n.get("tags") or "[]")
         n["is_core"] = bool(n["is_core"])
+        n["metadata"] = json.loads(n.get("metadata") or "{}")
     return {"nodes": nodes, "edges": edges}
 
 
@@ -106,12 +112,13 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
 
     for n in data.get("nodes", []):
         tags = n["tags"] if isinstance(n.get("tags"), list) else json.loads(n.get("tags") or "[]")
+        metadata = n.get("metadata") or {}
         conn.execute(
             """
             INSERT INTO nodes
                 (id, type, content, created_at, last_activated,
-                 activation_count, salience, is_core, tags, zone, superseded_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                 activation_count, salience, is_core, tags, zone, superseded_at, metadata)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
                 type=excluded.type,
                 content=excluded.content,
@@ -121,7 +128,8 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
                 is_core=excluded.is_core,
                 tags=excluded.tags,
                 zone=excluded.zone,
-                superseded_at=excluded.superseded_at
+                superseded_at=excluded.superseded_at,
+                metadata=excluded.metadata
             """,
             (
                 n["id"], n["type"], n["content"],
@@ -131,6 +139,7 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
                 json.dumps(tags),
                 n.get("zone", "active"),
                 n.get("superseded_at"),
+                json.dumps(metadata),
             ),
         )
 

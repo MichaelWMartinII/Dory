@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from .graph import Graph
 from .schema import NodeType, EdgeType, new_id
 from . import activation as act
 from . import consolidation
 from . import store
+
+_EPISODIC_EDGE_TYPES = frozenset({"SUPPORTS_FACT", "MENTIONS"})
 
 _STOPWORDS = frozenset({
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "have", "has",
@@ -52,6 +55,36 @@ _AGGREGATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Hybrid questions ask about change or evolution across time — need both layers.
+_HYBRID_RE = re.compile(
+    r"\b(how has\b|"
+    r"has .{1,40} changed|"
+    r"changed over|"
+    r"over time|"
+    r"evolution of|"
+    r"progress on|"
+    r"then (?:vs?\.?|versus) now|"
+    r"compare.{0,20} sessions?|"
+    r"across sessions?|"
+    r"throughout .{0,20} (?:sessions?|time|weeks?|months?))\b",
+    re.IGNORECASE,
+)
+
+
+def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid"]:
+    """
+    Classify a query into one of three retrieval modes. Deterministic — no LLM call.
+
+    hybrid:   questions about change or evolution across time (need both layers)
+    episodic: counts, ordering, specific events, relative time (need session log)
+    graph:    preferences, stable facts, beliefs, relationships (default)
+    """
+    if _HYBRID_RE.search(topic):
+        return "hybrid"
+    if _AGGREGATION_RE.search(topic) or _TEMPORAL_RE.search(topic):
+        return "episodic"
+    return "graph"
+
 
 def _key_terms(content: str, n: int = 12) -> str:
     """Extract up to n meaningful terms from content for FTS querying."""
@@ -74,24 +107,79 @@ def _parse_session_date(content: str) -> str:
     return m.group(1) if m else "9999-99-99"  # unknown dates sort last
 
 
-def _temporal_context(graph: Graph, activated: dict[str, float]) -> str:
+def _get_linked_summaries(
+    activated: dict[str, float],
+    graph: Graph,
+    limit: int = 3,
+) -> list:
     """
-    For temporal questions: SESSION nodes in chronological order, then
-    spread-activated semantic nodes for subject context.
+    Walk SUPPORTS_FACT and MENTIONS edges from activated nodes to find
+    SESSION_SUMMARY nodes. Returns up to `limit` summaries, sorted
+    most-recent-first, scored by (activation_level × edge_weight).
     """
+    scores: dict[str, float] = {}
+    for node_id, level in activated.items():
+        for edge in graph.edges_for_node(node_id):
+            if edge.type.value not in _EPISODIC_EDGE_TYPES:
+                continue
+            other_id = edge.target_id if edge.source_id == node_id else edge.source_id
+            other = graph.get_node(other_id)
+            if other and other.type == NodeType.SESSION_SUMMARY:
+                scores[other_id] = max(scores.get(other_id, 0.0), level * edge.weight)
+
+    top = sorted(scores.items(), key=lambda x: -x[1])[:limit]
+    nodes = [graph.get_node(sid) for sid, _ in top if graph.get_node(sid)]
+    nodes.sort(key=lambda n: _parse_session_date(n.content), reverse=True)
+    return nodes
+
+
+def _format_summary_block(summaries: list) -> str:
+    """
+    Render SESSION_SUMMARY nodes as a concise episodic block for context injection.
+    Includes date, narrative, and salient_counts so the model can answer counting
+    questions directly from structured data rather than re-deriving from prose.
+    """
+    if not summaries:
+        return ""
+    lines = ["Episodic summaries (most recent first):"]
+    for node in summaries:
+        date = node.metadata.get("session_date") or _parse_session_date(node.content)
+        # Strip the "[date] Summary: " prefix — we'll re-render it cleanly
+        text = re.sub(r"^\[\d{4}-\d{2}-\d{2}\]\s+Summary:\s*", "", node.content).strip()
+        lines.append(f"\n[{date}]")
+        lines.append(f"  {text}")
+        counts = node.metadata.get("salient_counts") or {}
+        if counts:
+            count_str = ", ".join(f"{k}: {v}" for k, v in counts.items())
+            lines.append(f"  Counts: {count_str}")
+    return "\n".join(lines)
+
+
+def _temporal_context(graph: Graph, activated: dict[str, float], summaries: list | None = None) -> str:
+    """
+    For temporal questions: episodic summaries (if any) then SESSION nodes in
+    chronological order, then spread-activated semantic nodes for subject context.
+    """
+    lines = []
+
+    summary_block = _format_summary_block(summaries or [])
+    if summary_block:
+        lines.append(summary_block)
+        lines.append("")
+
     session_nodes = sorted(
         [n for n in graph.all_nodes() if n.type.value == "SESSION"],
         key=lambda n: _parse_session_date(n.content),
     )
 
-    lines = ["SESSION memories (chronological):"]
+    lines.append("SESSION memories (chronological):")
     for node in session_nodes:
         lines.append(f"- {node.content}")
 
     non_session = sorted(
         [
             (nid, lvl) for nid, lvl in activated.items()
-            if graph.get_node(nid) and graph.get_node(nid).type.value != "SESSION"
+            if graph.get_node(nid) and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
         ],
         key=lambda x: -x[1],
     )[:20]
@@ -107,12 +195,13 @@ def _temporal_context(graph: Graph, activated: dict[str, float]) -> str:
     return "\n".join(lines)
 
 
-def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None) -> str:
     """
-    For counting/listing questions: expand to all FTS matches so every
-    relevant instance is included, not just the top activated nodes.
-    SESSION nodes are always included at full weight — they're the most
-    complete record of what happened in each session.
+    For counting/listing questions: episodic summaries (structured counts first),
+    then full FTS expansion so every relevant instance is captured.
+
+    Trust hierarchy: salient_counts in summaries are authoritative for counts.
+    SESSION nodes provide full narrative backup.
     """
     terms = _key_terms(topic, n=6)
     if terms:
@@ -124,25 +213,55 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float]) 
     expanded: dict[str, float] = dict(activated)
     for node in graph.all_nodes():
         if node.id in fts_ids and node.id not in expanded:
-            expanded[node.id] = 0.3  # above SESSION floor so they appear
+            expanded[node.id] = 0.3
 
-    # Always keep all SESSION nodes — required for complete counts across sessions.
-    # Separate them out so they aren't squeezed by max_nodes on semantic content.
     session_lines = []
     non_session: dict[str, float] = {}
     for node_id, level in expanded.items():
         node = graph.get_node(node_id)
         if node and node.type.value == "SESSION":
             session_lines.append(f"- {node.content}")
-        else:
+        elif node and node.type.value != "SESSION_SUMMARY":
             non_session[node_id] = level
 
     semantic_block = act.serialize(non_session, graph, max_nodes=80)
 
+    parts = []
+
+    summary_block = _format_summary_block(summaries or [])
+    if summary_block:
+        parts.append(summary_block)
+        parts.append(
+            "Note: For counting questions, trust the 'Counts' fields above over the "
+            "narrative memories below — they were extracted at session end."
+        )
+
+    parts.append(semantic_block)
+
     if session_lines:
-        session_lines_sorted = sorted(session_lines)  # rough chronological by date prefix
-        return semantic_block + "\n\nSESSION memories (complete episode log):\n" + "\n".join(session_lines_sorted)
-    return semantic_block
+        session_lines_sorted = sorted(session_lines)
+        parts.append("SESSION memories (complete episode log):\n" + "\n".join(session_lines_sorted))
+
+    return "\n\n".join(p for p in parts if p)
+
+
+def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None) -> str:
+    """
+    For evolution/change questions: semantic graph block followed by episodic
+    summaries and session log, with explicit trust hierarchy.
+    """
+    semantic = act.serialize(activated, graph, max_nodes=30)
+    episodic = _aggregation_context(topic, graph, activated, summaries)
+
+    return (
+        semantic
+        + "\n\n"
+        + episodic
+        + "\n\n"
+        + "Trust hierarchy: for counts, specific events, and dates trust the episodic "
+        + "summaries and SESSION memories. For preferences, beliefs, and stable facts "
+        + "trust the semantic graph."
+    )
 
 
 def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5, weight: float = 0.5) -> int:
@@ -192,13 +311,23 @@ def query(topic: str, graph: Graph) -> str:
         if node.type.value == "SESSION" and node.id not in activated:
             activated[node.id] = 0.1
 
-    # Aggregation wins when "how many [non-time-unit]" is present, even if temporal
-    # language like "last month" also appears. Temporal is for ordering/duration, not counting.
-    if _AGGREGATION_RE.search(topic):
-        return _aggregation_context(topic, graph, activated)
+    route = _route_query(topic)
 
-    if _TEMPORAL_RE.search(topic):
-        return _temporal_context(graph, activated)
+    # For episodic and hybrid routes, pull SESSION_SUMMARY nodes linked to
+    # the activated semantic nodes — staged retrieval.
+    summaries: list = []
+    if route in ("episodic", "hybrid"):
+        summaries = _get_linked_summaries(activated, graph, limit=3)
+
+    if route == "hybrid":
+        return _hybrid_context(topic, graph, activated, summaries)
+
+    if route == "episodic":
+        # Aggregation wins over temporal when both signals are present —
+        # counting questions need exhaustive recall, not just ordering.
+        if _AGGREGATION_RE.search(topic):
+            return _aggregation_context(topic, graph, activated, summaries)
+        return _temporal_context(graph, activated, summaries)
 
     return act.serialize(activated, graph, max_nodes=50)
 
