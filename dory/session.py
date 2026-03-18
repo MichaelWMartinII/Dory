@@ -232,8 +232,9 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], 
     if summary_block:
         parts.append(summary_block)
         parts.append(
-            "Note: For counting questions, trust the 'Counts' fields above over the "
-            "narrative memories below — they were extracted at session end."
+            "Note: The 'Counts' fields above are extracted totals — use them as a strong "
+            "starting point, but also check the SESSION memories below for any instances "
+            "that may not have been counted."
         )
 
     parts.append(semantic_block)

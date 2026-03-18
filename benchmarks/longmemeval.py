@@ -331,7 +331,8 @@ def run_item(
                             node.created_at = session_ts
                             node.last_activated = session_ts
 
-                # Episodic summary for this session
+                # Episodic summary for this session (SESSION node — full narrative)
+                # + SESSION_SUMMARY node — structured counts + provenance edges
                 summ = Summarizer(
                     g,
                     model=extract_model,
@@ -340,13 +341,15 @@ def run_item(
                     api_key=api_key,
                 )
                 summ.summarize(session_turns, session_date=session_date)
+                summ.summarize_session(session_turns, session_date=session_date)
 
             context = session.query(question, g)
             g.save()
 
             if verbose:
                 session_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION")
-                print(f"    [{question_id}] {len(g.all_nodes())} nodes ({session_nodes} sessions)")
+                summary_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION_SUMMARY")
+                print(f"    [{question_id}] {len(g.all_nodes())} nodes ({session_nodes} sessions, {summary_nodes} summaries)")
     else:
         # Baseline: raw conversation as context (no extraction, one API call)
         context = "Conversation history:\n" + "\n".join(
