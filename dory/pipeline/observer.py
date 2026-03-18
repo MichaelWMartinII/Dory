@@ -57,7 +57,11 @@ Return ONLY valid JSON matching this schema exactly:
 Rules:
 - ENTITY: a person, place, project, tool, or organization
 - CONCEPT: an idea, domain, technology, or pattern
-- EVENT: something that happened or was decided
+- EVENT: something that happened or was decided. If a session date is provided at the top
+  and the event includes relative timing ("yesterday", "last week", "a month ago", "2 weeks
+  ago"), calculate and include the approximate absolute date in the content.
+  Example: "User bought smoker (approx. 2023-03-10, purchased about a week before session 2023-03-17)"
+  Example: "User attended baking class (approx. 2022-03-20, mentioned as yesterday in session 2022-03-21)"
 - PREFERENCE: a stated or clearly implied preference or working style. Capture these signals:
   positive ("I like/love/enjoy/prefer"), negative ("I hate/dislike/avoid", "this sucked"),
   commitment ("I'll stick with", "I always use", "I never"), and repeated behavior
@@ -74,19 +78,31 @@ _USER_TEMPLATE = """Extract memories from this conversation:
 
 {turns}"""
 
+_USER_TEMPLATE_WITH_DATE = """Session date: {session_date}
+
+Extract memories from this conversation:
+
+{turns}"""
+
 
 # ---------------------------------------------------------------------------
 # LLM backends
 # ---------------------------------------------------------------------------
 
-def _call_ollama(turns_text: str, model: str) -> dict | None:
+def _user_message(turns_text: str, session_date: str = "") -> str:
+    if session_date:
+        return _USER_TEMPLATE_WITH_DATE.format(session_date=session_date, turns=turns_text)
+    return _USER_TEMPLATE.format(turns=turns_text)
+
+
+def _call_ollama(turns_text: str, model: str, session_date: str = "") -> dict | None:
     try:
         import ollama
         resp = ollama.chat(
             model=model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)},
+                {"role": "user", "content": _user_message(turns_text, session_date)},
             ],
             format="json",
             options={"temperature": 0.1},
@@ -96,14 +112,14 @@ def _call_ollama(turns_text: str, model: str) -> dict | None:
         return {"_error": str(e)}
 
 
-def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str = "local") -> dict | None:
+def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str = "local", session_date: str = "") -> dict | None:
     try:
         import httpx
         payload = {
             "model": model,
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)},
+                {"role": "user", "content": _user_message(turns_text, session_date)},
             ],
             "temperature": 0.1,
             "response_format": {"type": "json_object"},
@@ -121,7 +137,7 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
         return {"_error": str(e)}
 
 
-def _call_anthropic(turns_text: str, model: str, api_key: str) -> dict | None:
+def _call_anthropic(turns_text: str, model: str, api_key: str, session_date: str = "") -> dict | None:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
@@ -130,7 +146,7 @@ def _call_anthropic(turns_text: str, model: str, api_key: str) -> dict | None:
             max_tokens=1024,
             system=_SYSTEM_PROMPT,
             messages=[
-                {"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)}
+                {"role": "user", "content": _user_message(turns_text, session_date)}
             ],
         )
         raw = resp.content[0].text
@@ -232,14 +248,14 @@ class Observer:
         if len(self._buffer) >= self.threshold:
             self._extract()
 
-    def flush(self) -> dict:
+    def flush(self, session_date: str = "") -> dict:
         """
         Force extraction of any remaining buffered turns.
         Call at end of session.
         Returns extraction stats.
         """
         if self._buffer:
-            self._extract()
+            self._extract(session_date=session_date)
         self.graph.save()
         return dict(self._stats)
 
@@ -250,7 +266,7 @@ class Observer:
     # Internal
     # ------------------------------------------------------------------
 
-    def _extract(self) -> None:
+    def _extract(self, session_date: str = "") -> None:
         if not self._buffer:
             return
 
@@ -260,20 +276,20 @@ class Observer:
         self._buffer = []
         self._stats["extractions_run"] += 1
 
-        raw = self._call_llm(turns_text)
+        raw = self._call_llm(turns_text, session_date=session_date)
         if not raw or "_error" in raw:
             self._stats["errors"] += 1
             return
 
         self._write(raw)
 
-    def _call_llm(self, turns_text: str) -> dict | None:
+    def _call_llm(self, turns_text: str, session_date: str = "") -> dict | None:
         if self.backend == "ollama":
-            return _call_ollama(turns_text, self.model)
+            return _call_ollama(turns_text, self.model, session_date=session_date)
         elif self.backend == "openai":
-            return _call_openai_compat(turns_text, self.model, self.base_url, self.api_key)
+            return _call_openai_compat(turns_text, self.model, self.base_url, self.api_key, session_date=session_date)
         elif self.backend == "anthropic":
-            return _call_anthropic(turns_text, self.model, self.api_key)
+            return _call_anthropic(turns_text, self.model, self.api_key, session_date=session_date)
         return None
 
     def _write(self, extracted: dict) -> None:

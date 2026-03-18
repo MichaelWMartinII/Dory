@@ -22,7 +22,23 @@ _TEMPORAL_RE = re.compile(
     r"\b(before|after|earlier|earliest|later|latest|prior to|"
     r"how long|how many (?:days?|weeks?|months?|years?)|"
     r"which (?:one )?(?:came|was|happened) (?:first|last|before|after|earlier|later)|"
-    r"in what order|chronolog|timeline|when did|more recent|duration)\b",
+    r"in what order|chronolog|timeline|when did|more recent|duration|"
+    # Relative time: "2 weeks ago", "a month ago", "3 days ago", "two months ago"
+    r"(?:\d+|a|an|two|three|four|five|six|several|few|couple\s+of)\s+"
+    r"(?:days?|weeks?|months?|years?)\s+ago|"
+    # "last Saturday/week/month/two months", "this week/month", "yesterday"
+    r"last\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year|night|"
+    r"(?:few|several|two|three|four|five|six|\d+)\s+(?:days?|weeks?|months?|years?))|"
+    r"yesterday|today|tonight|"
+    r"this\s+(?:week|month|year|morning|evening|afternoon)|"
+    r"past\s+(?:few|several|couple\s+of|two|three|four|five|six|\d+)?\s*(?:days?|weeks?|months?|years?)|"
+    r"previous\s+(?:week|month|year)|"
+    # "which/who X first/last", "what is the order of"
+    r"which\b.+\b(?:first|last)\b|"
+    r"who\b.+\b(?:first|last)\b|"
+    r"the order of|order of the|most recently|"
+    # Holiday/calendar anchors
+    r"valentine|thanksgiving|christmas|new year)\b",
     re.IGNORECASE,
 )
 
@@ -95,6 +111,8 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float]) 
     """
     For counting/listing questions: expand to all FTS matches so every
     relevant instance is included, not just the top activated nodes.
+    SESSION nodes are always included at full weight — they're the most
+    complete record of what happened in each session.
     """
     terms = _key_terms(topic, n=6)
     if terms:
@@ -108,7 +126,23 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float]) 
         if node.id in fts_ids and node.id not in expanded:
             expanded[node.id] = 0.3  # above SESSION floor so they appear
 
-    return act.serialize(expanded, graph, max_nodes=100)
+    # Always keep all SESSION nodes — required for complete counts across sessions.
+    # Separate them out so they aren't squeezed by max_nodes on semantic content.
+    session_lines = []
+    non_session: dict[str, float] = {}
+    for node_id, level in expanded.items():
+        node = graph.get_node(node_id)
+        if node and node.type.value == "SESSION":
+            session_lines.append(f"- {node.content}")
+        else:
+            non_session[node_id] = level
+
+    semantic_block = act.serialize(non_session, graph, max_nodes=80)
+
+    if session_lines:
+        session_lines_sorted = sorted(session_lines)  # rough chronological by date prefix
+        return semantic_block + "\n\nSESSION memories (complete episode log):\n" + "\n".join(session_lines_sorted)
+    return semantic_block
 
 
 def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5, weight: float = 0.5) -> int:
@@ -158,11 +192,13 @@ def query(topic: str, graph: Graph) -> str:
         if node.type.value == "SESSION" and node.id not in activated:
             activated[node.id] = 0.1
 
-    if _TEMPORAL_RE.search(topic):
-        return _temporal_context(graph, activated)
-
+    # Aggregation wins when "how many [non-time-unit]" is present, even if temporal
+    # language like "last month" also appears. Temporal is for ordering/duration, not counting.
     if _AGGREGATION_RE.search(topic):
         return _aggregation_context(topic, graph, activated)
+
+    if _TEMPORAL_RE.search(topic):
+        return _temporal_context(graph, activated)
 
     return act.serialize(activated, graph, max_nodes=50)
 

@@ -60,19 +60,31 @@ _USER_TEMPLATE = """Capture this conversation as a detailed episodic memory. Pre
 
 {turns}"""
 
+_USER_TEMPLATE_WITH_DATE = """Session date: {session_date}
+
+Capture this conversation as a detailed episodic memory. Preserve every specific name, number, item, and recommendation — do not compress or omit specifics. When the conversation mentions events with relative timing ("yesterday", "last week", "a month ago"), resolve them to approximate absolute dates using the session date above and include both in the summary (e.g., "attended baking class on 2022-03-20 (the day before this session)"):
+
+{turns}"""
+
 
 # ---------------------------------------------------------------------------
 # LLM backends (shared pattern with Observer)
 # ---------------------------------------------------------------------------
 
-def _call_ollama(turns_text: str, model: str) -> dict | None:
+def _user_message(turns_text: str, session_date: str = "") -> str:
+    if session_date:
+        return _USER_TEMPLATE_WITH_DATE.format(session_date=session_date, turns=turns_text)
+    return _USER_TEMPLATE.format(turns=turns_text)
+
+
+def _call_ollama(turns_text: str, model: str, session_date: str = "") -> dict | None:
     try:
         import ollama
         resp = ollama.chat(
             model=model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)},
+                {"role": "user", "content": _user_message(turns_text, session_date)},
             ],
             format="json",
             options={"temperature": 0.1},
@@ -82,7 +94,7 @@ def _call_ollama(turns_text: str, model: str) -> dict | None:
         return {"_error": str(e)}
 
 
-def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str = "local") -> dict | None:
+def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str = "local", session_date: str = "") -> dict | None:
     try:
         import httpx
         r = httpx.post(
@@ -91,7 +103,7 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
                 "model": model,
                 "messages": [
                     {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)},
+                    {"role": "user", "content": _user_message(turns_text, session_date)},
                 ],
                 "temperature": 0.1,
                 "response_format": {"type": "json_object"},
@@ -105,7 +117,7 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
         return {"_error": str(e)}
 
 
-def _call_anthropic(turns_text: str, model: str, api_key: str) -> dict | None:
+def _call_anthropic(turns_text: str, model: str, api_key: str, session_date: str = "") -> dict | None:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
@@ -113,7 +125,7 @@ def _call_anthropic(turns_text: str, model: str, api_key: str) -> dict | None:
             model=model,
             max_tokens=1024,
             system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _USER_TEMPLATE.format(turns=turns_text)}],
+            messages=[{"role": "user", "content": _user_message(turns_text, session_date)}],
         )
         raw = resp.content[0].text
         try:
@@ -198,7 +210,7 @@ class Summarizer:
             f"{t['role'].upper()}: {t['content']}" for t in turns
         )
 
-        result = self._call_llm(turns_text)
+        result = self._call_llm(turns_text, session_date=session_date or "")
         if not result or "_error" in result:
             return None
 
@@ -237,13 +249,13 @@ class Summarizer:
         self.graph.save()
         return node.id
 
-    def _call_llm(self, turns_text: str) -> dict | None:
+    def _call_llm(self, turns_text: str, session_date: str = "") -> dict | None:
         if self.backend == "ollama":
-            return _call_ollama(turns_text, self.model)
+            return _call_ollama(turns_text, self.model, session_date=session_date)
         elif self.backend == "openai":
-            return _call_openai_compat(turns_text, self.model, self.base_url, self.api_key)
+            return _call_openai_compat(turns_text, self.model, self.base_url, self.api_key, session_date=session_date)
         elif self.backend == "anthropic":
-            return _call_anthropic(turns_text, self.model, self.api_key)
+            return _call_anthropic(turns_text, self.model, self.api_key, session_date=session_date)
         return None
 
     def _link_to_semantic(self, session_node_id: str, text: str, max_links: int = 6) -> None:

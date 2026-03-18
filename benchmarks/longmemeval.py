@@ -65,11 +65,11 @@ Treat the memory context below as your actual prior conversations with this pers
 
 Rules:
 - SESSION memories have date prefixes like [YYYY-MM-DD] — use these for ordering.
-- Only state a chronological order if both events have explicit dates OR the ordering is
-  explicitly stated in the context (e.g. "X happened before Y", "after the meeting, I…").
-- Never convert relative language ("recently", "last time", "previous", "a few weeks ago")
-  into a specific date or hard ordering.
-- If ordering cannot be determined from the context, say so directly and briefly.
+- Use "Today's date" shown in the context to resolve relative expressions like "X days ago",
+  "last Saturday", "the past month", "recently", etc. Calculate exact dates when needed.
+- Only state a chronological order if both events have explicit dates, can be calculated from
+  today's date, or the ordering is explicitly stated in the context.
+- If ordering cannot be determined even with today's date, say so directly and briefly.
 - Give a short, direct answer. Do not over-explain.
 
 Memory context:
@@ -124,48 +124,69 @@ Question: {question}
 
 Answer:"""
 
+_ANSWER_PROMPT_PREFERENCE = """\
+You are answering a question about what this person would prefer or how they would like to be helped.
+Treat the memory context below as your actual prior conversations with this person.
+
+Instructions:
+- Search the context for any relevant preferences, interests, past experiences, or personality details
+  that apply to this question — even if the exact topic was never explicitly discussed before.
+- Apply what you know about this person to give a tailored, personalized answer.
+- Do NOT say "this was never discussed" or "I don't have memory" unless the context has absolutely
+  nothing relevant. If you have partial context, use it.
+- Give a direct, helpful response as if you know this person well.
+
+Memory context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
 _ANSWER_PROMPTS = {
     "temporal-reasoning": _ANSWER_PROMPT_TEMPORAL,
     "multi-session": _ANSWER_PROMPT_MULTI_SESSION,
     "knowledge-update": _ANSWER_PROMPT_KNOWLEDGE_UPDATE,
     "single-session-user": _ANSWER_PROMPT_SESSION,
     "single-session-assistant": _ANSWER_PROMPT_SESSION,
-    "single-session-preference": _ANSWER_PROMPT_SESSION,
+    "single-session-preference": _ANSWER_PROMPT_PREFERENCE,
 }
 
 
-def _get_prompt(question: str, context: str, question_type: str) -> str:
+def _get_prompt(question: str, context: str, question_type: str, question_date: str = "") -> str:
     template = _ANSWER_PROMPTS.get(question_type, _ANSWER_PROMPT_DEFAULT)
+    if question_date:
+        context = f"Today's date: {question_date}\n\n{context}"
     return template.format(context=context, question=question)
 
 
-def _answer_ollama(question: str, context: str, model: str, question_type: str = "") -> str:
+def _answer_ollama(question: str, context: str, model: str, question_type: str = "", question_date: str = "") -> str:
     import ollama
     resp = ollama.chat(
         model=model,
-        messages=[{"role": "user", "content": _get_prompt(question, context, question_type)}],
+        messages=[{"role": "user", "content": _get_prompt(question, context, question_type, question_date)}],
         options={"temperature": 0.0},
     )
     return resp["message"]["content"].strip()
 
 
-def _answer_anthropic(question: str, context: str, model: str, api_key: str, question_type: str = "") -> str:
+def _answer_anthropic(question: str, context: str, model: str, api_key: str, question_type: str = "", question_date: str = "") -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
     resp = client.messages.create(
         model=model,
         max_tokens=512,
-        messages=[{"role": "user", "content": _get_prompt(question, context, question_type)}],
+        messages=[{"role": "user", "content": _get_prompt(question, context, question_type, question_date)}],
     )
     return resp.content[0].text.strip()
 
 
-def _answer_openai(question: str, context: str, model: str, base_url: str, api_key: str, question_type: str = "") -> str:
+def _answer_openai(question: str, context: str, model: str, base_url: str, api_key: str, question_type: str = "", question_date: str = "") -> str:
     from openai import OpenAI
     client = OpenAI(api_key=api_key, base_url=base_url)
     resp = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": _get_prompt(question, context, question_type)}],
+        messages=[{"role": "user", "content": _get_prompt(question, context, question_type, question_date)}],
         temperature=0.0,
         max_tokens=512,
     )
@@ -221,6 +242,18 @@ def run_item(
     question_type = item.get("question_type", "")
     sessions = item.get("haystack_sessions") or item.get("history", [])
     haystack_dates = item.get("haystack_dates") or []
+
+    # Parse question_date → human-readable "Monday, May 20, 2023" for today-anchor
+    question_date_str = ""
+    raw_qdate = item.get("question_date", "")
+    if raw_qdate:
+        try:
+            from datetime import datetime as _dt
+            question_date_str = _dt.strptime(
+                raw_qdate.split(" (")[0].strip(), "%Y/%m/%d"
+            ).strftime("%A, %B %d, %Y")
+        except Exception:
+            pass
 
     # Flatten sessions into turns
     all_turns: list[dict] = []
@@ -284,7 +317,7 @@ def run_item(
                     if content:
                         obs.add_turn(role, content)
 
-                obs.flush()
+                obs.flush(session_date=session_date or "")
 
                 # Backdate newly extracted nodes to the actual session date
                 # so temporal ordering questions get correct relative dates.
@@ -326,11 +359,11 @@ def run_item(
     # Generate answer — re-raise credit/auth errors so the caller can abort
     try:
         if backend == "ollama":
-            answer = _answer_ollama(question, context, answer_model, question_type)
+            answer = _answer_ollama(question, context, answer_model, question_type, question_date_str)
         elif backend == "anthropic":
-            answer = _answer_anthropic(question, context, answer_model, api_key, question_type)
+            answer = _answer_anthropic(question, context, answer_model, api_key, question_type, question_date_str)
         else:
-            answer = _answer_openai(question, context, answer_model, base_url, api_key, question_type)
+            answer = _answer_openai(question, context, answer_model, base_url, api_key, question_type, question_date_str)
     except Exception as e:
         err = str(e).lower()
         if "credit" in err or "billing" in err or "insufficient" in err or "balance" in err:
