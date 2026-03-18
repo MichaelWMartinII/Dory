@@ -329,9 +329,8 @@ Dory draws from:
 - [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
 - [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture (Python port)
 - [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini).
-  - **Measured — full 500-question run, Haiku extract + Haiku answer:** 54.4% overall (up from 18.4% pre-episodic layer). Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%.
-  - **Measured — spot checks with Sonnet extraction:** temporal-reasoning 64.0% (50-question sample), multi-session 76.0% (25-question sample).
-  - **Pending:** full 500-question run with Sonnet extraction.
+  - **Measured — full 500-question run, Haiku extract + Haiku answer:** 54.4% overall. Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%.
+  - **Measured — full 500-question run, Sonnet extract + Sonnet answer:** 66.8% overall. Per-type: knowledge-update 75.6%, multi-session 70.7%, single-session-user 85.7%, single-session-assistant 82.1%, single-session-preference 43.3%, temporal-reasoning 46.6%.
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
 - [Hopfield (1982) — Neural networks and physical systems with emergent collective computational abilities](https://www.pnas.org/doi/10.1073/pnas.79.8.2554) — statistical mechanics of associative memory; energy landscape formulation underlying spreading activation (Nobel Prize in Physics, 2024)
