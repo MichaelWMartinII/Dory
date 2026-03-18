@@ -58,7 +58,10 @@ Rules:
 - ENTITY: a person, place, project, tool, or organization
 - CONCEPT: an idea, domain, technology, or pattern
 - EVENT: something that happened or was decided
-- PREFERENCE: a stated or clearly implied preference or working style
+- PREFERENCE: a stated or clearly implied preference or working style. Capture these signals:
+  positive ("I like/love/enjoy/prefer"), negative ("I hate/dislike/avoid", "this sucked"),
+  commitment ("I'll stick with", "I always use", "I never"), and repeated behavior
+  (choosing the same thing multiple times). Do not require explicit "I prefer" language.
 - BELIEF: an assertion about the world the speaker holds to be true
 - PROCEDURE: a repeatable step-by-step process, workflow, skill, or algorithm the user applies
 - confidence: 0.9+ for explicitly stated facts, 0.7-0.89 for strongly implied, below 0.7 for uncertain

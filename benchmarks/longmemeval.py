@@ -46,11 +46,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ---------------------------------------------------------------------------
 
 _ANSWER_PROMPT_DEFAULT = """\
-You are answering a question about a person based on their conversation history.
-Treat the memory context below as your actual prior conversation history with this person.
-Use only the provided memory context — do not make up information.
-If the context doesn't contain enough information to answer confidently, say so briefly.
-Give a concise, direct answer.
+You are answering a question about a person based on their prior conversation history.
+Treat the memory context below as your actual prior conversations with this person.
+Use only what is directly supported by the context. Do not make up information.
+Only say there is not enough information if the relevant fact is genuinely absent.
+Give a short, direct answer. Do not explain your reasoning unless asked.
 
 Memory context:
 {context}
@@ -61,35 +61,45 @@ Answer:"""
 
 _ANSWER_PROMPT_TEMPORAL = """\
 You are answering a question about the timing or order of events from a person's conversation history.
+Treat the memory context below as your actual prior conversations with this person.
 
-SESSION memories below have date prefixes like [YYYY-MM-DD]. Use these dates to determine
-order and duration. Show your date comparison explicitly before giving your final answer.
+Rules:
+- SESSION memories have date prefixes like [YYYY-MM-DD] — use these for ordering.
+- Only state a chronological order if both events have explicit dates OR the ordering is
+  explicitly stated in the context (e.g. "X happened before Y", "after the meeting, I…").
+- Never convert relative language ("recently", "last time", "previous", "a few weeks ago")
+  into a specific date or hard ordering.
+- If ordering cannot be determined from the context, say so directly and briefly.
+- Give a short, direct answer. Do not over-explain.
 
 Memory context:
 {context}
 
 Question: {question}
 
-Answer (compare dates explicitly, then give a direct answer):"""
+Answer:"""
 
 _ANSWER_PROMPT_MULTI_SESSION = """\
 You are answering a question that may require finding information across multiple conversations.
+Treat the memory context below as your actual prior conversations with this person.
 
-Search ALL memories below — including every SESSION entry. For counting or listing questions,
+Search ALL memories — including every SESSION entry. For counting or listing questions,
 find every relevant instance before answering. Do not stop at the first match.
+Give a short, direct answer.
 
 Memory context:
 {context}
 
 Question: {question}
 
-Answer (check all sessions, then give a direct answer):"""
+Answer:"""
 
 _ANSWER_PROMPT_KNOWLEDGE_UPDATE = """\
 You are answering a question about a person's current situation based on their conversation history.
+Treat the memory context below as your actual prior conversations with this person.
 
 If you see a [KNOWLEDGE UPDATE] in the memories, use the UPDATED value, not the original.
-Always prefer the most recent information.
+Always prefer the most recent information. Give a short, direct answer.
 
 Memory context:
 {context}
@@ -100,10 +110,12 @@ Answer:"""
 
 _ANSWER_PROMPT_SESSION = """\
 You are answering a question about what happened or was said in a specific conversation.
-Treat the memory context below as your actual prior conversation history with this person.
+Treat the memory context below as your actual prior conversations with this person.
 
 The answer is likely in a SESSION memory. Look for the specific detail asked about:
 exact names, numbers, items, colors, recommendations, or things the assistant said.
+Only say there is not enough information if the fact is genuinely absent from the context.
+Give a short, direct answer.
 
 Memory context:
 {context}
@@ -361,6 +373,13 @@ def main() -> None:
                         help="Only run N questions (for testing)")
     parser.add_argument("--offset", type=int, default=0,
                         help="Start at this index in the dataset (default: 0)")
+    parser.add_argument("--stratify", type=str, default=None,
+                        help=(
+                            "Stratified sample by question type. "
+                            "Format: type:n,type:n,... "
+                            "e.g. temporal-reasoning:20,single-session-preference:15,"
+                            "multi-session:7,knowledge-update:8"
+                        ))
     parser.add_argument("--resume", action="store_true",
                         help="Skip questions already in output file")
     parser.add_argument("--verbose", action="store_true",
@@ -374,7 +393,28 @@ def main() -> None:
         items = items[args.offset :]
     if args.limit:
         items = items[: args.limit]
-    print(f"  {len(items)} questions")
+
+    # Stratified sampling
+    if args.stratify:
+        import random
+        by_type: dict[str, list] = {}
+        for item in items:
+            t = item.get("question_type", "unknown")
+            by_type.setdefault(t, []).append(item)
+        sampled = []
+        for spec in args.stratify.split(","):
+            qtype, n = spec.strip().rsplit(":", 1)
+            pool = by_type.get(qtype.strip(), [])
+            sampled.extend(random.sample(pool, min(int(n), len(pool))))
+        random.shuffle(sampled)
+        items = sampled
+        print(f"  Stratified sample: {len(items)} questions")
+        for qtype, pool in by_type.items():
+            n = sum(1 for i in items if i.get("question_type") == qtype)
+            if n:
+                print(f"    {qtype}: {n}")
+    else:
+        print(f"  {len(items)} questions")
 
     # Handle resume
     done_ids: set[str] = set()
