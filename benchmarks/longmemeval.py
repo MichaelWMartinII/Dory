@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 _ANSWER_PROMPT_DEFAULT = """\
 You are answering a question about a person based on their conversation history.
+Treat the memory context below as your actual prior conversation history with this person.
 Use only the provided memory context — do not make up information.
 If the context doesn't contain enough information to answer confidently, say so briefly.
 Give a concise, direct answer.
@@ -99,6 +100,7 @@ Answer:"""
 
 _ANSWER_PROMPT_SESSION = """\
 You are answering a question about what happened or was said in a specific conversation.
+Treat the memory context below as your actual prior conversation history with this person.
 
 The answer is likely in a SESSION memory. Look for the specific detail asked about:
 exact names, numbers, items, colors, recommendations, or things the assistant said.
@@ -232,16 +234,10 @@ def run_item(
                 confidence_floor=0.65,
             )
 
-            for turn in all_turns:
-                role = turn.get("role", "user")
-                content = turn.get("content", "")
-                if content:
-                    obs.add_turn(role, content)
-
-            obs.flush()
-
-            # Episodic layer: summarize each session individually so
-            # single-session questions ("what did you do in session X?") are answerable
+            # Process sessions one at a time so extracted nodes can be
+            # backdated to the actual session date. Processing all turns
+            # at once stamps every node with today's date, breaking
+            # temporal ordering questions.
             for idx, session_data in enumerate(sessions):
                 session_turns: list[dict] = []
                 if isinstance(session_data, list):
@@ -252,27 +248,53 @@ def run_item(
                 elif isinstance(session_data, dict) and session_data.get("content"):
                     session_turns = [session_data]
 
-                if session_turns:
-                    # Parse "2023/04/10 (Mon) 17:50" → "2023-04-10"
-                    raw_date = haystack_dates[idx] if idx < len(haystack_dates) else None
-                    session_date: str | None = None
-                    if raw_date:
-                        try:
-                            from datetime import datetime
-                            session_date = datetime.strptime(
-                                raw_date.split(" (")[0].strip(), "%Y/%m/%d"
-                            ).strftime("%Y-%m-%d")
-                        except Exception:
-                            pass
+                if not session_turns:
+                    continue
 
-                    summ = Summarizer(
-                        g,
-                        model=extract_model,
-                        backend=backend,
-                        base_url=base_url,
-                        api_key=api_key,
-                    )
-                    summ.summarize(session_turns, session_date=session_date)
+                # Parse "2023/04/10 (Mon) 17:50" → "2023-04-10"
+                raw_date = haystack_dates[idx] if idx < len(haystack_dates) else None
+                session_date: str | None = None
+                if raw_date:
+                    try:
+                        from datetime import datetime, timezone
+                        session_date = datetime.strptime(
+                            raw_date.split(" (")[0].strip(), "%Y/%m/%d"
+                        ).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+
+                # Snapshot node IDs before this session
+                nodes_before = set(g._nodes.keys())
+
+                for turn in session_turns:
+                    role = turn.get("role", "user")
+                    content = turn.get("content", "")
+                    if content:
+                        obs.add_turn(role, content)
+
+                obs.flush()
+
+                # Backdate newly extracted nodes to the actual session date
+                # so temporal ordering questions get correct relative dates.
+                if session_date:
+                    from datetime import datetime, timezone
+                    session_ts = datetime.strptime(
+                        session_date, "%Y-%m-%d"
+                    ).replace(tzinfo=timezone.utc).isoformat()
+                    for node_id, node in g._nodes.items():
+                        if node_id not in nodes_before:
+                            node.created_at = session_ts
+                            node.last_activated = session_ts
+
+                # Episodic summary for this session
+                summ = Summarizer(
+                    g,
+                    model=extract_model,
+                    backend=backend,
+                    base_url=base_url,
+                    api_key=api_key,
+                )
+                summ.summarize(session_turns, session_date=session_date)
 
             context = session.query(question, g)
             g.save()
