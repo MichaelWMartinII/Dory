@@ -71,6 +71,17 @@ _HYBRID_RE = re.compile(
 )
 
 
+# Preference questions asking for personalized recommendations or suggestions
+# need episodic context (what has the user actually done?) not just PREFERENCE nodes.
+_PREFERENCE_RE = re.compile(
+    r"\b(would I (?:like|enjoy|prefer)|suggest(?:ions)? for me|"
+    r"based on (?:my|what I)|recommend for me|what should I get|"
+    r"what kind of .{0,20} (?:do|would) I|"
+    r"any suggestions? for (?:my|me))\b",
+    re.IGNORECASE,
+)
+
+
 def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid"]:
     """
     Classify a query into one of three retrieval modes. Deterministic — no LLM call.
@@ -83,6 +94,8 @@ def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid"]:
         return "hybrid"
     if _AGGREGATION_RE.search(topic) or _TEMPORAL_RE.search(topic):
         return "episodic"
+    if _PREFERENCE_RE.search(topic):
+        return "hybrid"
     return "graph"
 
 
@@ -150,8 +163,14 @@ def _format_summary_block(summaries: list) -> str:
         lines.append(f"  {text}")
         counts = node.metadata.get("salient_counts") or {}
         if counts:
-            count_str = ", ".join(f"{k}: {v}" for k, v in counts.items())
-            lines.append(f"  Counts: {count_str}")
+            low_conf = set(node.metadata.get("low_confidence_counts") or [])
+            parts = []
+            for k, v in counts.items():
+                if k in low_conf:
+                    parts.append(f"{k}: {v} ⚠ low confidence — verify against session text")
+                else:
+                    parts.append(f"{k}: {v}")
+            lines.append(f"  Counts: {', '.join(parts)}")
     return "\n".join(lines)
 
 

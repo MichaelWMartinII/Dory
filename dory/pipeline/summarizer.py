@@ -50,8 +50,12 @@ Return ONLY valid JSON:
   "session_date": "YYYY-MM-DD if clearly stated in the conversation, else null"
 }
 
-For salient_counts: only include things explicitly counted or listed in the session.
-Examples: {"plants_acquired": 3, "books_mentioned": 2, "restaurants_visited": 1}
+For salient_counts:
+- Include things explicitly counted OR listed/enumerated in the session.
+- When items appear in a list or enumeration, count each distinct named item as 1 even without an explicit number.
+  Example: "bought tomatoes, peppers, and three basil plants" → {"items_purchased": 3, "basil_plants": 3}
+  Example: "completed 3 courses on Coursera and 2 on edX" → {"courses_completed": 5, "coursera_courses": 3, "edx_courses": 2}
+- Budget: maximum 15 salient_count entries. If more than 15 things are countable, keep the most specific.
 Omit salient_counts entirely if nothing countable is present."""
 
 _SUMMARY_USER_TEMPLATE = """Compress this conversation into a structured episodic memory. Preserve all specific names, numbers, and countable items:
@@ -438,6 +442,10 @@ class Summarizer:
 
         # SUPPORTS_FACT edges to semantic nodes this summary grounds
         self._link_supports_fact(node.id, summary + " " + " ".join(topics))
+
+        # Cross-validate salient_counts against EVENT nodes — flag low-confidence counts
+        self._cross_validate_counts(node)
+
         self.graph.save()
         return node.id
 
@@ -486,6 +494,43 @@ class Summarizer:
                 linked += 1
                 if linked >= max_links:
                     break
+
+    def _cross_validate_counts(self, summary_node: object) -> None:
+        """
+        Compare salient_counts against EVENT nodes linked via SUPPORTS_FACT edges.
+        If the graph EVENT count for a key entity differs from salient_count by > 1,
+        mark that count as low-confidence in metadata.
+        """
+        salient_counts = summary_node.metadata.get("salient_counts") or {}
+        if not salient_counts:
+            return
+
+        # Collect EVENT nodes reachable from this summary via SUPPORTS_FACT
+        event_contents: list[str] = []
+        for edge in self.graph.all_edges():
+            if edge.source_id != summary_node.id:
+                continue
+            if edge.type.value != "SUPPORTS_FACT":
+                continue
+            node = self.graph.get_node(edge.target_id)
+            if node and node.type == NodeType.EVENT:
+                event_contents.append(node.content.lower())
+
+        if not event_contents:
+            return
+
+        low_confidence_keys: list[str] = []
+        for key, count in salient_counts.items():
+            # Check how many EVENT nodes mention the first significant word of the key
+            key_word = key.replace("_", " ").split()[0]
+            event_mentions = sum(1 for c in event_contents if key_word in c)
+            if event_mentions > 0 and abs(event_mentions - count) > 1:
+                low_confidence_keys.append(key)
+
+        if low_confidence_keys:
+            lc = summary_node.metadata.get("low_confidence_counts") or []
+            lc.extend(low_confidence_keys)
+            summary_node.metadata["low_confidence_counts"] = list(set(lc))
 
     def _link_to_semantic(self, session_node_id: str, text: str, max_links: int = 6) -> None:
         """CO_OCCURS edges from SESSION node to related semantic nodes found via FTS."""
