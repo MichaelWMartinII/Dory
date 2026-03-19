@@ -61,10 +61,11 @@ def demote_core(graph: Graph, threshold: float = 0.25) -> list[str]:
     return demoted
 
 
-def run(graph: Graph) -> dict:
-    """Full consolidation pass: decay → prune → promote/demote → zone management → dedup."""
+def run(graph: Graph, summarizer=None) -> dict:
+    """Full consolidation pass: decay → prune → promote/demote → zone management → dedup → session summary."""
     from .pipeline.decayer import Decayer
     from .pipeline.reflector import Reflector
+    from . import store
 
     decay(graph)
     pruned = prune(graph)
@@ -75,6 +76,15 @@ def run(graph: Graph) -> dict:
     decayer_stats = Decayer(graph).run()
     reflector_stats = Reflector(graph).run()
 
+    summary_node_id = None
+    if summarizer is not None:
+        obs = store.get_observations(graph.path, session_id=summarizer.session_id, limit=500)
+        if obs:
+            # Most recent first from DB → reverse for chronological order
+            turns = [{"role": o.get("role", "user"), "content": o["content"]} for o in reversed(obs)]
+            session_date = obs[0].get("created_at", "")[:10] or None
+            summary_node_id = summarizer.summarize_session(turns, session_date=session_date)
+
     return {
         "pruned_edges": pruned,
         "promoted_core": len(promoted),
@@ -84,4 +94,5 @@ def run(graph: Graph) -> dict:
         "restored_nodes": decayer_stats["restored"],
         "duplicates_merged": reflector_stats["duplicates_merged"],
         "supersessions": reflector_stats["supersessions_applied"],
+        "session_summary": summary_node_id,
     }

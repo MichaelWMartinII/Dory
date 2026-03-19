@@ -14,6 +14,7 @@ class NodeType(str, Enum):
     BELIEF = "BELIEF"
     SESSION = "SESSION"
     PROCEDURE = "PROCEDURE"  # step-by-step process, workflow, skill, or algorithm
+    SESSION_SUMMARY = "SESSION_SUMMARY"  # compressed episodic summary of a session
 
 
 class EdgeType(str, Enum):
@@ -33,6 +34,11 @@ class EdgeType(str, Enum):
     SUPERSEDES = "SUPERSEDES"
     # Implicit co-occurrence edges
     CO_OCCURS = "CO_OCCURS"
+    # Episodic edges (SessionSummary layer)
+    TEMPORALLY_AFTER = "TEMPORALLY_AFTER"    # summary → previous summary (chronological chain)
+    TEMPORALLY_BEFORE = "TEMPORALLY_BEFORE"  # summary → next summary
+    MENTIONS = "MENTIONS"                    # summary → entity/concept it references
+    SUPPORTS_FACT = "SUPPORTS_FACT"          # summary → semantic node it grounds
 
 
 def now_iso() -> str:
@@ -61,6 +67,7 @@ class Node:
     tags: list[str] = field(default_factory=list)
     zone: str = ZONE_ACTIVE          # active | archived | expired
     superseded_at: str | None = None # ISO timestamp when this node was superseded
+    metadata: dict = field(default_factory=dict)  # arbitrary structured data (e.g. salient_counts)
 
     def to_dict(self) -> dict:
         return {
@@ -75,6 +82,7 @@ class Node:
             "tags": self.tags,
             "zone": self.zone,
             "superseded_at": self.superseded_at,
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -91,6 +99,7 @@ class Node:
             tags=d.get("tags", []),
             zone=d.get("zone", ZONE_ACTIVE),
             superseded_at=d.get("superseded_at"),
+            metadata=d.get("metadata", {}),
         )
 
 

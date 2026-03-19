@@ -67,10 +67,12 @@ Rules:
 - SESSION memories have date prefixes like [YYYY-MM-DD] — use these for ordering.
 - Use "Today's date" shown in the context to resolve relative expressions like "X days ago",
   "last Saturday", "the past month", "recently", etc. Calculate exact dates when needed.
+- For any date calculation, show your arithmetic on one line before your answer:
+  "Today: YYYY-MM-DD. Event: YYYY-MM-DD. Difference: N days."
 - Only state a chronological order if both events have explicit dates, can be calculated from
   today's date, or the ordering is explicitly stated in the context.
 - If ordering cannot be determined even with today's date, say so directly and briefly.
-- Give a short, direct answer. Do not over-explain.
+- Give a short, direct answer after showing your arithmetic.
 
 Memory context:
 {context}
@@ -222,6 +224,8 @@ def run_item(
     api_key: str,
     verbose: bool = False,
     use_dory: bool = True,
+    no_session_summary: bool = False,
+    no_session_node: bool = False,
 ) -> dict:
     """
     Process one LongMemEval item.
@@ -331,7 +335,8 @@ def run_item(
                             node.created_at = session_ts
                             node.last_activated = session_ts
 
-                # Episodic summary for this session
+                # Episodic summary for this session (SESSION node — full narrative)
+                # + SESSION_SUMMARY node — structured counts + provenance edges
                 summ = Summarizer(
                     g,
                     model=extract_model,
@@ -339,14 +344,22 @@ def run_item(
                     base_url=base_url,
                     api_key=api_key,
                 )
-                summ.summarize(session_turns, session_date=session_date)
+                if not no_session_node:
+                    summ.summarize(session_turns, session_date=session_date)
+                if not no_session_summary and not no_session_node:
+                    summ.summarize_session(session_turns, session_date=session_date)
+
+            # Synthesize behavioral preferences from repeated patterns across sessions
+            from dory.pipeline.reflector import Reflector
+            Reflector(g, db_path=db_path).run()
 
             context = session.query(question, g)
             g.save()
 
             if verbose:
                 session_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION")
-                print(f"    [{question_id}] {len(g.all_nodes())} nodes ({session_nodes} sessions)")
+                summary_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION_SUMMARY")
+                print(f"    [{question_id}] {len(g.all_nodes())} nodes ({session_nodes} sessions, {summary_nodes} summaries)")
     else:
         # Baseline: raw conversation as context (no extraction, one API call)
         context = "Conversation history:\n" + "\n".join(
@@ -417,6 +430,10 @@ def main() -> None:
                         help="Skip questions already in output file")
     parser.add_argument("--verbose", action="store_true",
                         help="Print per-item progress")
+    parser.add_argument("--no-session-summary", action="store_true",
+                        help="Ablation: disable SESSION_SUMMARY nodes (keep SESSION nodes)")
+    parser.add_argument("--no-session-node", action="store_true",
+                        help="Ablation: disable both SESSION and SESSION_SUMMARY nodes")
     args = parser.parse_args()
 
     # Load dataset
@@ -486,6 +503,8 @@ def main() -> None:
                     base_url=args.base_url,
                     api_key=args.api_key,
                     verbose=args.verbose,
+                    no_session_summary=args.no_session_summary,
+                    no_session_node=args.no_session_node,
                 )
             except Exception as e:
                 err = str(e).lower()

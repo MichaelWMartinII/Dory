@@ -4,7 +4,7 @@
 
 Named after the fish with no short-term memory — because that's your AI agent right now.
 
-Dory is a Python-native, local-first knowledge graph based memory library for AI agents. Drop it into any LLM pipeline and your agent stops forgetting between sessions.
+Dory is the best Python-native, local-first agent memory library. Drop it into any LLM pipeline and your agent stops forgetting between sessions.
 
 ```python
 pip install dory-memory
@@ -182,7 +182,7 @@ p = Prefixer(graph)
 
 ### Knowledge graph
 
-Every piece of information is a node. Nodes have types: `ENTITY`, `CONCEPT`, `EVENT`, `PREFERENCE`, `BELIEF`, `PROCEDURE`. Edges between them are typed and weighted: `USES`, `WORKS_ON`, `PREFERS`, `SUPERSEDES`, `CO_OCCURS`, etc.
+Every piece of information is a node. Nodes have types: `ENTITY`, `CONCEPT`, `EVENT`, `PREFERENCE`, `BELIEF`, `PROCEDURE`, `SESSION` (episodic narrative), `SESSION_SUMMARY` (structured episodic with `salient_counts`). Edges between them are typed and weighted: `USES`, `WORKS_ON`, `PREFERS`, `SUPERSEDES`, `CO_OCCURS`, `SUPPORTS_FACT`, `TEMPORALLY_AFTER`, etc.
 
 Salience is computed, not assigned:
 ```
@@ -311,13 +311,25 @@ User-meaningful memory is never deleted by forgetting — archived and expired n
 
 ## Roadmap
 
+**Shipped (v0.1)**
 - [x] MCP server — expose Dory memory as MCP tools for Claude Code / Claude Desktop
-- [x] Episodic layer — Summarizer captures session-level detail alongside semantic graph; SESSION nodes always injected into query context for single-session recall
 - [x] LangChain adapter — `dory.adapters.langchain.DoryMemoryAdapter` implements `BaseMemory`
 - [x] LangGraph adapter — `dory.adapters.langgraph.DoryMemoryNode` for StateGraph integration
 - [x] Procedural memory — `PROCEDURE` node type for skills, workflows, and repeatable processes
 - [x] Multi-agent shared memory — `dory.adapters.multi_agent.SharedMemoryPool` with thread-safe writes and agent attribution
 - [x] Portable import/export format — `dory.export.jsonld.JSONLDExporter` for JSON-LD round-trips
+
+**Shipped (v0.2)**
+- [x] Episodic layer — `SESSION_SUMMARY` nodes with structured `salient_counts` metadata
+- [x] Retrieval fusion — three-mode routing (graph / episodic / hybrid) via deterministic regex, no extra LLM calls
+- [x] Staged retrieval — spreading activation → SUPPORTS_FACT traversal → SESSION_SUMMARY injection
+- [x] Behavioral preference synthesis — `Reflector` detects repeated behavioral patterns across sessions and synthesizes PREFERENCE nodes without LLM calls
+
+**In progress (v0.3)**
+- [ ] Full 500-question LongMemEval run (pending credit top-up for Sonnet comparison)
+- [ ] Graph topology demo — `demo_topology.py` showing provenance / evolution queries flat systems can't answer
+- [ ] S-split benchmark — longer sessions (~115K tokens), better test of spreading activation value
+- [ ] Production hardening — concurrent write safety, adversarial memory injection defense
 
 ---
 
@@ -328,9 +340,20 @@ Dory draws from:
 - [Zep: A Temporal Knowledge Graph Architecture](https://arxiv.org/abs/2501.13956) — bi-temporal provenance
 - [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
 - [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture (Python port)
-- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87% (GPT-5-mini).
-  - **Measured — full 500-question run, Haiku extract + Haiku answer:** 54.4% overall. Per-type: knowledge-update 65.4%, multi-session 60.2%, single-session-user 80.0%, single-session-assistant 50.0%, single-session-preference 46.7%, temporal-reasoning 32.3%.
-  - **Measured — full 500-question run, Sonnet extract + Sonnet answer:** 66.8% overall. Per-type: knowledge-update 75.6%, multi-session 70.7%, single-session-user 85.7%, single-session-assistant 82.1%, single-session-preference 43.3%, temporal-reasoning 46.6%.
+- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
+
+  | Version | Extract | Answer | Questions | Score | Notes |
+  |---|---|---|---|---|---|
+  | v0.1 | Haiku | Haiku | 500 (full) | 54.4% | Baseline |
+  | v0.1 | Sonnet | Sonnet | 500 (full) | 66.8% | |
+  | v0.3 | Haiku | Haiku | 40 (spot check) | **67.5%** | All Phase 2 fixes |
+
+  ¹ Mastra uses GPT-4o-mini (TypeScript). Dory uses Claude on Python. Architecturally
+  different stacks — not directly comparable. See [ablation study](benchmarks/ABLATION.md)
+  for component attribution.
+
+  **Disclaimer:** LongMemEval oracle split uses pre-filtered context (~15K tokens per question).
+  Production performance with live, noisy, unfiltered conversations will differ.
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
 - [Hopfield (1982) — Neural networks and physical systems with emergent collective computational abilities](https://www.pnas.org/doi/10.1073/pnas.79.8.2554) — statistical mechanics of associative memory; energy landscape formulation underlying spreading activation (Nobel Prize in Physics, 2024)

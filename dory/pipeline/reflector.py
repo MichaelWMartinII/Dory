@@ -31,8 +31,18 @@ from pathlib import Path
 from typing import Any
 
 from ..graph import Graph
-from ..schema import Node, EdgeType, ZONE_ACTIVE, ZONE_ARCHIVED, now_iso, new_id
+from ..schema import Node, NodeType, EdgeType, ZONE_ACTIVE, ZONE_ARCHIVED, now_iso, new_id
 from .. import store
+
+_PREF_STOPWORDS = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
+    "had", "do", "does", "did", "will", "would", "should", "may", "might",
+    "can", "could", "to", "of", "in", "on", "at", "for", "with", "by", "from",
+    "as", "and", "or", "but", "not", "this", "that", "it", "its", "also",
+    "more", "than", "just", "very", "all", "any", "one", "two", "get", "user",
+    "users", "prefers", "prefer", "likes", "like", "enjoys", "enjoy",
+    "use", "uses", "used", "using", "new", "add", "adds", "added", "i",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +131,7 @@ class Reflector:
             "duplicates_merged": 0,
             "supersessions_applied": 0,
             "observations_compressed": 0,
+            "behavioral_preferences_synthesized": 0,
             "errors": 0,
         }
 
@@ -136,6 +147,11 @@ class Reflector:
 
         try:
             stats["observations_compressed"] = self._compress_observations()
+        except Exception as e:
+            stats["errors"] += 1
+
+        try:
+            stats["behavioral_preferences_synthesized"] = self._synthesize_behavioral_preferences()
         except Exception as e:
             stats["errors"] += 1
 
@@ -250,6 +266,88 @@ class Reflector:
             applied += 1
 
         return applied
+
+    # ------------------------------------------------------------------
+    # Internal — behavioral preference synthesis
+    # ------------------------------------------------------------------
+
+    def _synthesize_behavioral_preferences(self) -> int:
+        """
+        Detect latent preferences inferred from repeated behavior across sessions,
+        not just explicitly stated preferences.
+
+        Algorithm:
+          1. Extract all PREFERENCE and CONCEPT nodes.
+          2. For each node, compute its "subject keywords" (content minus stopwords).
+          3. Build an inverted index: keyword → list of nodes.
+          4. For any keyword appearing in 3+ nodes whose creation dates span at least
+             2 distinct calendar days (proxy for different sessions), synthesize a new
+             PREFERENCE node: "User consistently engages with X (observed N sessions)"
+          5. Mark it is_core=True, link with CO_OCCURS edges to source nodes.
+          6. Skip if a SUPERSEDES edge from a synthetic node for this keyword already
+             exists (avoid double-synthesis across repeated Reflector runs).
+
+        No LLM calls — pure graph aggregation.
+        """
+        from collections import defaultdict
+
+        target_types = {NodeType.PREFERENCE, NodeType.CONCEPT}
+        nodes = [n for n in self.graph.all_nodes(zone=ZONE_ACTIVE) if n.type in target_types]
+
+        if len(nodes) < 3:
+            return 0
+
+        # Build inverted index: subject_keyword → [node, ...]
+        keyword_index: dict[str, list[Node]] = defaultdict(list)
+        for node in nodes:
+            words = {
+                w for w in node.content.lower().split()
+                if len(w) >= 4 and w not in _PREF_STOPWORDS
+            }
+            for word in words:
+                keyword_index[word].append(node)
+
+        # Collect already-synthesized keywords to avoid duplicates
+        existing_synthetic = set()
+        for node in self.graph.all_nodes(zone=ZONE_ACTIVE):
+            if node.metadata.get("synthesized_from_keyword"):
+                existing_synthetic.add(node.metadata["synthesized_from_keyword"])
+
+        synthesized = 0
+        for keyword, cluster in keyword_index.items():
+            if len(cluster) < 3:
+                continue
+            if keyword in existing_synthetic:
+                continue
+
+            # Check that nodes span at least 2 distinct calendar days
+            dates = {n.created_at[:10] for n in cluster if n.created_at}
+            if len(dates) < 2:
+                continue
+
+            n_sessions = len(dates)
+            content = (
+                f"User consistently engages with '{keyword}' "
+                f"(observed across {n_sessions} sessions)"
+            )
+
+            # Create the synthetic PREFERENCE node
+            new_node = self.graph.add_node(
+                type=NodeType.PREFERENCE,
+                content=content,
+                tags=["synthesized", keyword],
+            )
+            new_node.is_core = True
+            new_node.metadata["synthesized_from_keyword"] = keyword
+            new_node.metadata["source_node_ids"] = [n.id for n in cluster]
+
+            # Link to source nodes with CO_OCCURS edges
+            for src in cluster:
+                self.graph.add_edge(new_node.id, src.id, EdgeType.CO_OCCURS, weight=0.7)
+
+            synthesized += 1
+
+        return synthesized
 
     # ------------------------------------------------------------------
     # Internal — observation compression
