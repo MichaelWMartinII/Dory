@@ -46,8 +46,36 @@ The deeper problem: naive memory injection makes things *worse*. Dumping everyth
 ```python
 from dory import DoryMemory
 
-# Works with any model — local or cloud
-mem = DoryMemory()                                          # manual observations only
+# No dependencies required — works out of the box
+mem = DoryMemory()
+
+# Add memories manually
+mem.observe("Alice is migrating payments from Stripe to a custom processor", node_type="EVENT")
+mem.observe("Alice prefers async Python over synchronous frameworks", node_type="PREFERENCE")
+mem.observe("The migration deadline is end of Q2", node_type="EVENT")
+
+# Query — returns context to inject into your LLM prompt
+context = mem.query("payment migration deadline")
+print(context)
+
+# End of session: consolidate, decay, promote core memories
+mem.flush()
+
+# See your graph in the browser
+mem.visualize()
+```
+
+Or from the command line after any session:
+
+```bash
+dory visualize          # opens graph in browser
+dory show               # print stats + core memories
+dory query "topic"      # spreading activation from the terminal
+```
+
+**With auto-extraction** (add a model and Dory extracts memories from conversation turns automatically):
+
+```python
 mem = DoryMemory(extract_model="qwen3:14b")                 # local via Ollama
 mem = DoryMemory(                                           # Claude
     extract_model="claude-haiku-4-5-20251001",
@@ -60,23 +88,14 @@ mem = DoryMemory(                                           # GPT / Grok / any c
     extract_api_key="sk-...",
 )
 
-# --- Query context at session start ---
-context = mem.query("menu endpoint authentication")   # inject into system prompt
-
-# --- Or build API-ready messages with prompt caching ---
-result = mem.build_context("menu endpoint authentication")
-messages = result.as_anthropic_messages(user_query)   # Anthropic SDK w/ cache_control
-messages = result.as_openai_messages(user_query)      # OpenAI / compat
-
-# --- Log turns during the session ---
+# Log turns — extraction happens automatically every N turns
 mem.add_turn("user", "I'm working on AllergyFind today, need to add a menu endpoint")
 mem.add_turn("assistant", "What authentication approach are you using?")
 
-# --- Or add memories manually ---
-mem.observe("User prefers JWT for API auth", node_type="PREFERENCE")
-
-# --- End of session: extract, consolidate, decay ---
-stats = mem.flush()
+# Build API-ready messages with prompt caching
+result = mem.build_context("menu endpoint authentication")
+messages = result.as_anthropic_messages(user_query)   # Anthropic SDK w/ cache_control
+messages = result.as_openai_messages(user_query)      # OpenAI / compat
 ```
 
 ### MCP server (Claude Code / Claude Desktop)

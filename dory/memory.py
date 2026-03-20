@@ -217,6 +217,22 @@ class DoryMemory:
     # Power-user access
     # ------------------------------------------------------------------
 
+    def visualize(self, output_path: "Path | None" = None, open_browser: bool = True) -> "Path":
+        """
+        Open an interactive D3.js visualization of the current memory graph.
+
+        Parameters
+        ----------
+        output_path : Path | None
+            Where to save the HTML file. Defaults to a temp file.
+        open_browser : bool
+            Open the file in the default browser immediately (default True).
+
+        Returns the path to the generated HTML file.
+        """
+        from .visualize import open_visualization
+        return open_visualization(self._graph, output_path=output_path, open_browser=open_browser)
+
     @property
     def graph(self) -> Graph:
         """Direct access to the underlying Graph for advanced operations."""
