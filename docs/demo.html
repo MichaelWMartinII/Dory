@@ -17,8 +17,8 @@
   }
 
   #sidebar {
-    width: 280px;
-    min-width: 280px;
+    width: 300px;
+    min-width: 300px;
     background: #161b22;
     border-right: 1px solid #30363d;
     display: flex;
@@ -56,6 +56,108 @@
   .stat-val { font-size: 20px; font-weight: 700; color: #58a6ff; }
   .stat-lbl { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
 
+  /* ----- Query panel ----- */
+  #query-panel {
+    padding: 12px 16px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  #query-panel h3 {
+    font-size: 11px;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  #query-input {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    width: 100%;
+    outline: none;
+    margin-bottom: 6px;
+  }
+  #query-input:focus { border-color: #58a6ff; }
+  #query-input::placeholder { color: #484f58; }
+
+  #query-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .query-chip {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1.4;
+  }
+  .query-chip:hover { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
+  .query-chip.active { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
+
+  #route-badge {
+    display: none;
+    margin-bottom: 6px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .badge-graph    { background: #0d1f3c; color: #58a6ff; border: 1px solid #58a6ff; }
+  .badge-episodic { background: #0f2b0f; color: #56d364; border: 1px solid #56d364; }
+  .badge-hybrid   { background: #2d1a00; color: #f0883e; border: 1px solid #f0883e; }
+
+  #activation-list {
+    display: none;
+  }
+
+  .activated-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: #21262d;
+    border-radius: 4px;
+    padding: 5px 8px;
+    margin-bottom: 3px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .activated-item:hover { background: #30363d; }
+  .activated-item-header { display: flex; justify-content: space-between; align-items: center; }
+  .activated-item-type { color: #58a6ff; font-size: 10px; }
+  .activated-item-label { color: #c9d1d9; line-height: 1.3; }
+  .activation-bar-wrap { background: #0d1117; border-radius: 2px; height: 3px; margin-top: 2px; }
+  .activation-bar { height: 3px; background: #58a6ff; border-radius: 2px; transition: width 0.3s; }
+
+  #clear-query {
+    display: none;
+    background: none;
+    border: none;
+    color: #8b949e;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 0;
+    text-decoration: underline;
+  }
+  #clear-query:hover { color: #c9d1d9; }
+
+  /* ----- Legend ----- */
   #legend {
     padding: 12px 16px;
     border-bottom: 1px solid #30363d;
@@ -84,8 +186,34 @@
     flex-shrink: 0;
   }
 
+  /* ----- Edge legend ----- */
+  #edge-legend {
+    padding: 10px 16px;
+    border-bottom: 1px solid #30363d;
+  }
+  #edge-legend h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .edge-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .edge-swatch {
+    width: 24px;
+    height: 2px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .edge-swatch.dashed {
+    background: repeating-linear-gradient(90deg, #f85149 0px, #f85149 5px, transparent 5px, transparent 9px);
+    height: 2px;
+  }
+
+  /* ----- Zone controls ----- */
   #zone-controls {
-    padding: 12px 16px;
+    padding: 10px 16px;
     border-bottom: 1px solid #30363d;
   }
   #zone-controls h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
@@ -102,6 +230,7 @@
   }
   .zone-btn.active { background: #0d419d; border-color: #58a6ff; color: #58a6ff; }
 
+  /* ----- Detail panel ----- */
   #detail-panel {
     flex: 1;
     padding: 16px;
@@ -149,6 +278,18 @@
     margin-bottom: 8px;
   }
 
+  .archived-badge {
+    display: inline-block;
+    background: #2d1010;
+    border: 1px solid #f85149;
+    color: #f85149;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    margin-left: 4px;
+  }
+
   .connected-node {
     background: #21262d;
     border-radius: 4px;
@@ -158,9 +299,10 @@
     cursor: pointer;
   }
   .connected-node:hover { background: #30363d; }
-  .connected-node .edge-type { color: #58a6ff; font-size: 10px; }
+  .connected-node .edge-type { font-size: 10px; }
   .connected-node .node-label { color: #c9d1d9; }
 
+  /* ----- Graph area ----- */
   #graph-area {
     flex: 1;
     position: relative;
@@ -173,8 +315,7 @@
   }
 
   .link {
-    stroke: #4a7fa5;
-    stroke-opacity: 0.5;
+    stroke-opacity: 0.55;
   }
 
   .node circle {
@@ -259,6 +400,16 @@
     <div class="stat"><div class="stat-val" id="s-archived">0</div><div class="stat-lbl">Archived</div></div>
   </div>
 
+  <!-- Query mode -->
+  <div id="query-panel">
+    <h3>Query Memory</h3>
+    <input id="query-input" type="text" placeholder="Ask a question…">
+    <div id="query-examples"></div>
+    <div id="route-badge"></div>
+    <button id="clear-query" onclick="clearQuery()">✕ clear query</button>
+    <div id="activation-list"></div>
+  </div>
+
   <div id="legend">
     <h3>Node Types</h3>
     <div class="legend-item" data-type="ENTITY">          <div class="legend-dot" style="background:#4fc3f7"></div> Entity</div>
@@ -271,10 +422,20 @@
     <div class="legend-item" data-type="PROCEDURE">       <div class="legend-dot" style="background:#ce93d8"></div> Procedure</div>
   </div>
 
+  <div id="edge-legend">
+    <h3>Edge Types</h3>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#58a6ff"></div> WORKS_ON / USES</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#ffb74d"></div> PREFERS</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#4dd0e1"></div> SUPPORTS_FACT / MENTIONS</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#d29922"></div> TEMPORALLY_AFTER</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#4a7fa5"></div> CO_OCCURS</div>
+    <div class="edge-legend-item"><div class="edge-swatch dashed"></div> SUPERSEDES (archived)</div>
+  </div>
+
   <div id="zone-controls">
     <h3>Zones</h3>
     <button class="zone-btn active" data-zone="active">Active</button>
-    <button class="zone-btn" data-zone="archived">Archived</button>
+    <button class="zone-btn active" data-zone="archived">Archived</button>
     <button class="zone-btn" data-zone="expired">Expired</button>
   </div>
 
@@ -298,19 +459,43 @@
 </div>
 
 <script>
-const RAW_DATA  = {"nodes": [{"id": "5d88f171", "label": "Michael \u2014 solo developer, Murfreesboro TN", "full": "Michael \u2014 solo developer, Murfreesboro TN", "type": "ENTITY", "salience": 0.7, "is_core": true, "zone": "active", "tags": ["user"], "activation_count": 22, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "728698ea", "label": "AllergyFind \u2014 B2B allergen platform for restaurants", "full": "AllergyFind \u2014 B2B allergen platform for restaurants", "type": "ENTITY", "salience": 0.661, "is_core": true, "zone": "active", "tags": ["project"], "activation_count": 16, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "b447c6fa", "label": "Agent \u2014 local AI companion 'Elwin Ransom'", "full": "Agent \u2014 local AI companion 'Elwin Ransom'", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["project"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "74bbea48", "label": "Dory \u2014 agent memory library (this project)", "full": "Dory \u2014 agent memory library (this project)", "type": "ENTITY", "salience": 0.688, "is_core": true, "zone": "active", "tags": ["project"], "activation_count": 20, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "968077b5", "label": "Giovanni Ristorante Nashville \u2014 live customer", "full": "Giovanni Ristorante Nashville \u2014 live customer", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["customer"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "ed6cb35c", "label": "Qwen3-14B-Q4_K_M \u2014 primary local model", "full": "Qwen3-14B-Q4_K_M \u2014 primary local model", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "8709b595", "label": "FastAPI \u2014 web framework", "full": "FastAPI \u2014 web framework", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "c4788b7c", "label": "Supabase / PostgreSQL \u2014 AllergyFind backend", "full": "Supabase / PostgreSQL \u2014 AllergyFind backend", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0}, {"id": "48844ede", "label": "Local-first AI \u2014 data stays on device, no cloud", "full": "Local-first AI \u2014 data stays on device, no cloud", "type": "CONCEPT", "salience": 0.645, "is_core": true, "zone": "active", "tags": ["philosophy"], "activation_count": 14, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0}, {"id": "a6db9cde", "label": "Knowledge graph with spreading activation retrieval", "full": "Knowledge graph with spreading activation retrieval", "type": "CONCEPT", "salience": 0.654, "is_core": true, "zone": "active", "tags": ["architecture"], "activation_count": 15, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0}, {"id": "a1bd19db", "label": "Episodic memory \u2014 SESSION + SESSION_SUMMARY nodes", "full": "Episodic memory \u2014 SESSION + SESSION_SUMMARY nodes", "type": "CONCEPT", "salience": 0.645, "is_core": true, "zone": "active", "tags": ["architecture"], "activation_count": 14, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0}, {"id": "ba72baf1", "label": "Principled forgetting \u2014 three decay zones", "full": "Principled forgetting \u2014 three decay zones", "type": "CONCEPT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["architecture"], "activation_count": 0, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0}, {"id": "d3bda111", "label": "LongMemEval benchmark \u2014 500 questions (ICLR 2025)", "full": "LongMemEval benchmark \u2014 500 questions (ICLR 2025)", "type": "CONCEPT", "salience": 0.637, "is_core": false, "zone": "active", "tags": ["research"], "activation_count": 13, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0}, {"id": "8b927f30", "label": "Deploy AllergyFind: 1) run pytest 2) push to main 3) Supa\u2026", "full": "Deploy AllergyFind: 1) run pytest 2) push to main 3) Supabase migration 4) Render deploy", "type": "PROCEDURE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["workflow", "allergyapp"], "activation_count": 0, "created_at": "2026-03-20", "color": "#ce93d8", "opacity": 1.0}, {"id": "a9ee8f29", "label": "Debug local model: 1) check ollama serve 2) test with cur\u2026", "full": "Debug local model: 1) check ollama serve 2) test with curl 3) inspect logits 4) reduce context", "type": "PROCEDURE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["workflow", "llm"], "activation_count": 0, "created_at": "2026-03-20", "color": "#ce93d8", "opacity": 1.0}, {"id": "96393b05", "label": "[2026-03-10] Shipped Dory v0.1 to PyPI \u2014 initial release", "full": "[2026-03-10] Shipped Dory v0.1 to PyPI \u2014 initial release", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["milestone"], "activation_count": 0, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0}, {"id": "1eaeccf6", "label": "[2026-03-17] LongMemEval baseline \u2014 v0.1 Sonnet 66.8%, te\u2026", "full": "[2026-03-17] LongMemEval baseline \u2014 v0.1 Sonnet 66.8%, temporal-reasoning only 46.6%", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["benchmark"], "activation_count": 0, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0}, {"id": "2f52bc4c", "label": "[2026-03-19] Episodic layer shipped \u2014 SESSION_SUMMARY nod\u2026", "full": "[2026-03-19] Episodic layer shipped \u2014 SESSION_SUMMARY nodes, retrieval fusion", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["milestone"], "activation_count": 0, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0}, {"id": "dca14255", "label": "[2026-03-20] v0.3 full run \u2014 79.8% Sonnet (+13pp). Beats \u2026", "full": "[2026-03-20] v0.3 full run \u2014 79.8% Sonnet (+13pp). Beats Mem0 and Zep.", "type": "EVENT", "salience": 0.627, "is_core": true, "zone": "active", "tags": ["milestone", "benchmark"], "activation_count": 12, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0}, {"id": "19509984", "label": "[2026-02-15] Giovanni Ristorante went live on AllergyFind\u2026", "full": "[2026-02-15] Giovanni Ristorante went live on AllergyFind \u2014 first revenue", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["milestone"], "activation_count": 0, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0}, {"id": "e705cc27", "label": "Prefers Apache 2.0 license for all models and libraries", "full": "Prefers Apache 2.0 license for all models and libraries", "type": "PREFERENCE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["license"], "activation_count": 0, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0}, {"id": "c74b9c05", "label": "Prefers MLX over llama.cpp on Apple Silicon (20-30% faster)", "full": "Prefers MLX over llama.cpp on Apple Silicon (20-30% faster)", "type": "PREFERENCE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tooling"], "activation_count": 0, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0}, {"id": "2e780868", "label": "Prefers local-first \u2014 no data leaves device unless necessary", "full": "Prefers local-first \u2014 no data leaves device unless necessary", "type": "PREFERENCE", "salience": 0.606, "is_core": false, "zone": "active", "tags": ["philosophy"], "activation_count": 10, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0}, {"id": "6a04d68f", "label": "Graph memory beats flat vector search on multi-hop retrieval", "full": "Graph memory beats flat vector search on multi-hop retrieval", "type": "BELIEF", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["technical"], "activation_count": 0, "created_at": "2026-03-20", "color": "#ef9a9a", "opacity": 1.0}, {"id": "f71606a1", "label": "Principled forgetting is a competitive moat \u2014 nobody else\u2026", "full": "Principled forgetting is a competitive moat \u2014 nobody else ships it", "type": "BELIEF", "salience": 0.594, "is_core": false, "zone": "active", "tags": ["product"], "activation_count": 9, "created_at": "2026-03-20", "color": "#ef9a9a", "opacity": 1.0}, {"id": "7ce2f034", "label": "[2026-03-17] Session: Ran LongMemEval baseline. Temporal-\u2026", "full": "[2026-03-17] Session: Ran LongMemEval baseline. Temporal-reasoning at 46.6% \u2014 worst category. Identified SESSION_SUMMARY layer as key missing piece.", "type": "SESSION", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session"], "activation_count": 0, "created_at": "2026-03-20", "color": "#90a4ae", "opacity": 1.0}, {"id": "3fd318c5", "label": "[2026-03-19] Session: Shipped episodic layer. Ablation: S\u2026", "full": "[2026-03-19] Session: Shipped episodic layer. Ablation: SESSION_SUMMARY = +20pp. Spot check 67.5% Haiku \u2014 matches v0.1 Sonnet at 1/10th cost.", "type": "SESSION", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session"], "activation_count": 0, "created_at": "2026-03-20", "color": "#90a4ae", "opacity": 1.0}, {"id": "55f3ebc1", "label": "[2026-03-20] Session: Full v0.3 Sonnet run complete. 79.8\u2026", "full": "[2026-03-20] Session: Full v0.3 Sonnet run complete. 79.8% (+13pp). Tagged v0.3.0. Published GitHub Release. Every category improved.", "type": "SESSION", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session"], "activation_count": 0, "created_at": "2026-03-20", "color": "#90a4ae", "opacity": 1.0}, {"id": "592bf761", "label": "[2026-03-17] Summary: Ran 500-question LongMemEval baseli\u2026", "full": "[2026-03-17] Summary: Ran 500-question LongMemEval baseline with Sonnet. Identified temporal-reasoning (46.6%) and multi-session as weakest categories. Planned episodic SESSION_SUMMARY layer as primary fix.", "type": "SESSION_SUMMARY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session_summary"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4dd0e1", "opacity": 1.0}, {"id": "696d1bc1", "label": "[2026-03-19] Summary: Shipped v0.2 episodic layer. SESSIO\u2026", "full": "[2026-03-19] Summary: Shipped v0.2 episodic layer. SESSION_SUMMARY nodes with salient_counts. Retrieval fusion with 3-mode routing. Ablation confirmed +20pp from summaries. Spot check on 40 questions: 67.5% Haiku.", "type": "SESSION_SUMMARY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session_summary"], "activation_count": 0, "created_at": "2026-03-20", "color": "#4dd0e1", "opacity": 1.0}, {"id": "6fe719da", "label": "[2026-03-20] Summary: Full v0.3 Sonnet/Sonnet run on 500 \u2026", "full": "[2026-03-20] Summary: Full v0.3 Sonnet/Sonnet run on 500 questions. 79.8% overall, +13pp over v0.1. Temporal-reasoning: 46.6% \u2192 75.9% (+29.3pp). Tagged v0.3.0, published GitHub Release, updated README.", "type": "SESSION_SUMMARY", "salience": 0.617, "is_core": true, "zone": "active", "tags": ["session_summary"], "activation_count": 11, "created_at": "2026-03-20", "color": "#4dd0e1", "opacity": 1.0}], "links": [{"source": "5d88f171", "target": "728698ea", "type": "WORKS_ON", "weight": 0.9}, {"source": "5d88f171", "target": "b447c6fa", "type": "WORKS_ON", "weight": 0.8}, {"source": "5d88f171", "target": "74bbea48", "type": "WORKS_ON", "weight": 0.95}, {"source": "5d88f171", "target": "e705cc27", "type": "PREFERS", "weight": 0.9}, {"source": "5d88f171", "target": "c74b9c05", "type": "PREFERS", "weight": 0.85}, {"source": "5d88f171", "target": "2e780868", "type": "PREFERS", "weight": 0.95}, {"source": "2e780868", "target": "48844ede", "type": "CO_OCCURS", "weight": 0.9}, {"source": "728698ea", "target": "968077b5", "type": "USES", "weight": 0.9}, {"source": "728698ea", "target": "8709b595", "type": "USES", "weight": 0.8}, {"source": "728698ea", "target": "c4788b7c", "type": "USES", "weight": 0.8}, {"source": "728698ea", "target": "8b927f30", "type": "USES", "weight": 0.7}, {"source": "b447c6fa", "target": "ed6cb35c", "type": "USES", "weight": 0.9}, {"source": "b447c6fa", "target": "a9ee8f29", "type": "USES", "weight": 0.7}, {"source": "74bbea48", "target": "a6db9cde", "type": "USES", "weight": 0.95}, {"source": "74bbea48", "target": "a1bd19db", "type": "USES", "weight": 0.9}, {"source": "74bbea48", "target": "ba72baf1", "type": "USES", "weight": 0.85}, {"source": "74bbea48", "target": "d3bda111", "type": "CO_OCCURS", "weight": 0.8}, {"source": "a6db9cde", "target": "6a04d68f", "type": "SUPPORTS_FACT", "weight": 0.85}, {"source": "ba72baf1", "target": "f71606a1", "type": "SUPPORTS_FACT", "weight": 0.8}, {"source": "96393b05", "target": "74bbea48", "type": "CO_OCCURS", "weight": 0.8}, {"source": "1eaeccf6", "target": "d3bda111", "type": "SUPPORTS_FACT", "weight": 0.9}, {"source": "2f52bc4c", "target": "a1bd19db", "type": "SUPPORTS_FACT", "weight": 0.9}, {"source": "dca14255", "target": "d3bda111", "type": "SUPPORTS_FACT", "weight": 0.95}, {"source": "dca14255", "target": "74bbea48", "type": "CO_OCCURS", "weight": 0.9}, {"source": "19509984", "target": "728698ea", "type": "CO_OCCURS", "weight": 0.9}, {"source": "696d1bc1", "target": "592bf761", "type": "TEMPORALLY_AFTER", "weight": 0.9}, {"source": "6fe719da", "target": "696d1bc1", "type": "TEMPORALLY_AFTER", "weight": 0.9}, {"source": "592bf761", "target": "d3bda111", "type": "SUPPORTS_FACT", "weight": 0.85}, {"source": "592bf761", "target": "1eaeccf6", "type": "SUPPORTS_FACT", "weight": 0.8}, {"source": "696d1bc1", "target": "a1bd19db", "type": "SUPPORTS_FACT", "weight": 0.9}, {"source": "696d1bc1", "target": "2f52bc4c", "type": "SUPPORTS_FACT", "weight": 0.85}, {"source": "6fe719da", "target": "dca14255", "type": "SUPPORTS_FACT", "weight": 0.95}, {"source": "6fe719da", "target": "74bbea48", "type": "MENTIONS", "weight": 0.8}, {"source": "6fe719da", "target": "d3bda111", "type": "MENTIONS", "weight": 0.8}, {"source": "7ce2f034", "target": "592bf761", "type": "SUPPORTS_FACT", "weight": 0.7}, {"source": "3fd318c5", "target": "696d1bc1", "type": "SUPPORTS_FACT", "weight": 0.7}, {"source": "55f3ebc1", "target": "6fe719da", "type": "SUPPORTS_FACT", "weight": 0.7}]};
-const RAW_STATS = {"nodes": 31, "edges": 37, "core_nodes": 8, "active": 31, "archived": 0, "expired": 0};
+const RAW_DATA    = {"nodes": [{"id": "ee5c3b29", "label": "Michael \u2014 solo developer, Murfreesboro TN", "full": "Michael \u2014 solo developer, Murfreesboro TN", "type": "ENTITY", "salience": 0.7, "is_core": true, "zone": "active", "tags": ["user"], "activation_count": 26, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "cb403acc", "label": "AllergyFind \u2014 B2B allergen platform for restaurants", "full": "AllergyFind \u2014 B2B allergen platform for restaurants", "type": "ENTITY", "salience": 0.661, "is_core": true, "zone": "active", "tags": ["project"], "activation_count": 20, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "a873eae1", "label": "Agent \u2014 local AI companion 'Elwin Ransom'", "full": "Agent \u2014 local AI companion 'Elwin Ransom'", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["project"], "activation_count": 4, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "1fa49db0", "label": "Dory \u2014 agent memory library (this project)", "full": "Dory \u2014 agent memory library (this project)", "type": "ENTITY", "salience": 0.688, "is_core": true, "zone": "active", "tags": ["project"], "activation_count": 24, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "b2bfdd8d", "label": "Giovanni Ristorante Nashville \u2014 live customer", "full": "Giovanni Ristorante Nashville \u2014 live customer", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["customer"], "activation_count": 3, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "b83e2a7e", "label": "Qwen3-14B-Q4_K_M \u2014 primary local model", "full": "Qwen3-14B-Q4_K_M \u2014 primary local model", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 3, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "4f7c1819", "label": "FastAPI \u2014 web framework", "full": "FastAPI \u2014 web framework", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 3, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "ea218e54", "label": "Supabase / PostgreSQL \u2014 AllergyFind backend", "full": "Supabase / PostgreSQL \u2014 AllergyFind backend", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 3, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "5be62d79", "label": "MLX \u2014 Apple Silicon inference framework (20-30% faster th\u2026", "full": "MLX \u2014 Apple Silicon inference framework (20-30% faster than llama.cpp)", "type": "ENTITY", "salience": 0.58, "is_core": false, "zone": "active", "tags": ["tool"], "activation_count": 11, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "00532856", "label": "llama.cpp \u2014 inference backend (replaced by MLX)", "full": "llama.cpp \u2014 inference backend (replaced by MLX)", "type": "ENTITY", "salience": 0.3, "is_core": false, "zone": "archived", "tags": ["tool"], "activation_count": 2, "created_at": "2026-03-20", "color": "#4fc3f7", "opacity": 0.35, "superseded_at": "2026-03-01T00:00:00+00:00"}, {"id": "5a1f4321", "label": "Local-first AI \u2014 data stays on device, no cloud", "full": "Local-first AI \u2014 data stays on device, no cloud", "type": "CONCEPT", "salience": 0.645, "is_core": true, "zone": "active", "tags": ["philosophy"], "activation_count": 17, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "55006b1e", "label": "Knowledge graph with spreading activation retrieval", "full": "Knowledge graph with spreading activation retrieval", "type": "CONCEPT", "salience": 0.654, "is_core": true, "zone": "active", "tags": ["architecture"], "activation_count": 19, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "ce820731", "label": "Episodic memory \u2014 SESSION + SESSION_SUMMARY nodes", "full": "Episodic memory \u2014 SESSION + SESSION_SUMMARY nodes", "type": "CONCEPT", "salience": 0.645, "is_core": true, "zone": "active", "tags": ["architecture"], "activation_count": 18, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "d369e51b", "label": "Principled forgetting \u2014 three decay zones", "full": "Principled forgetting \u2014 three decay zones", "type": "CONCEPT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["architecture"], "activation_count": 4, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "bb3c6715", "label": "LongMemEval benchmark \u2014 500 questions (ICLR 2025)", "full": "LongMemEval benchmark \u2014 500 questions (ICLR 2025)", "type": "CONCEPT", "salience": 0.637, "is_core": false, "zone": "active", "tags": ["research"], "activation_count": 17, "created_at": "2026-03-20", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "f94132f6", "label": "Deploy AllergyFind: 1) run pytest 2) push to main 3) Supa\u2026", "full": "Deploy AllergyFind: 1) run pytest 2) push to main 3) Supabase migration 4) Render deploy", "type": "PROCEDURE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["workflow", "allergyapp"], "activation_count": 3, "created_at": "2026-03-20", "color": "#ce93d8", "opacity": 1.0, "superseded_at": null}, {"id": "3a788340", "label": "Debug local model: 1) check ollama serve 2) test with cur\u2026", "full": "Debug local model: 1) check ollama serve 2) test with curl 3) inspect logits 4) reduce context", "type": "PROCEDURE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["workflow", "llm"], "activation_count": 3, "created_at": "2026-03-20", "color": "#ce93d8", "opacity": 1.0, "superseded_at": null}, {"id": "3f5d659f", "label": "[2026-03-01] Switched inference backend from llama.cpp to\u2026", "full": "[2026-03-01] Switched inference backend from llama.cpp to MLX \u2014 25% faster on M-series", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["decision"], "activation_count": 2, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "28ca117c", "label": "[2026-03-10] Shipped Dory v0.1 to PyPI \u2014 initial release", "full": "[2026-03-10] Shipped Dory v0.1 to PyPI \u2014 initial release", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["milestone"], "activation_count": 4, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "dbfcf893", "label": "[2026-03-17] LongMemEval baseline \u2014 v0.1 Sonnet 66.8%, te\u2026", "full": "[2026-03-17] LongMemEval baseline \u2014 v0.1 Sonnet 66.8%, temporal-reasoning only 46.6%", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["benchmark"], "activation_count": 4, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "0b1de94a", "label": "[2026-03-19] Episodic layer shipped \u2014 SESSION_SUMMARY nod\u2026", "full": "[2026-03-19] Episodic layer shipped \u2014 SESSION_SUMMARY nodes, retrieval fusion, ablation +20pp", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["milestone"], "activation_count": 4, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "cd77a102", "label": "[2026-03-20] v0.3 full run \u2014 79.8% Sonnet (+13pp). Beats \u2026", "full": "[2026-03-20] v0.3 full run \u2014 79.8% Sonnet (+13pp). Beats Mem0 and Zep. Tagged v0.3.0.", "type": "EVENT", "salience": 0.627, "is_core": true, "zone": "active", "tags": ["milestone", "benchmark"], "activation_count": 16, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "5dc77568", "label": "[2026-02-15] Giovanni Ristorante went live on AllergyFind\u2026", "full": "[2026-02-15] Giovanni Ristorante went live on AllergyFind \u2014 first revenue", "type": "EVENT", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["milestone"], "activation_count": 3, "created_at": "2026-03-20", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "a1c67400", "label": "Prefers llama.cpp for local inference \u2014 cross-platform, w\u2026", "full": "Prefers llama.cpp for local inference \u2014 cross-platform, well-supported", "type": "PREFERENCE", "salience": 0.3, "is_core": false, "zone": "archived", "tags": ["tooling", "inference"], "activation_count": 3, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 0.35, "superseded_at": "2026-03-01T00:00:00+00:00"}, {"id": "c76482ed", "label": "Prefers MLX over llama.cpp on Apple Silicon (20-30% faster)", "full": "Prefers MLX over llama.cpp on Apple Silicon (20-30% faster)", "type": "PREFERENCE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["tooling", "inference"], "activation_count": 4, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "327a6991", "label": "Prefers local-first \u2014 no data leaves device unless necessary", "full": "Prefers local-first \u2014 no data leaves device unless necessary", "type": "PREFERENCE", "salience": 0.606, "is_core": false, "zone": "active", "tags": ["philosophy"], "activation_count": 14, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "3dcfd465", "label": "Prefers Apache 2.0 license for all models and libraries", "full": "Prefers Apache 2.0 license for all models and libraries", "type": "PREFERENCE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["license"], "activation_count": 4, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "a67a92fd", "label": "Prefers minimal dependencies \u2014 Dory core has zero require\u2026", "full": "Prefers minimal dependencies \u2014 Dory core has zero required deps", "type": "PREFERENCE", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["engineering"], "activation_count": 4, "created_at": "2026-03-20", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "dfe80517", "label": "Graph memory beats flat vector search on multi-hop retrieval", "full": "Graph memory beats flat vector search on multi-hop retrieval", "type": "BELIEF", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["technical"], "activation_count": 4, "created_at": "2026-03-20", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "ed385cc2", "label": "Principled forgetting is a competitive moat \u2014 nobody else\u2026", "full": "Principled forgetting is a competitive moat \u2014 nobody else ships it", "type": "BELIEF", "salience": 0.594, "is_core": false, "zone": "active", "tags": ["product"], "activation_count": 13, "created_at": "2026-03-20", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "ee5d717a", "label": "[2026-03-17] Session: Ran LongMemEval baseline. Temporal-\u2026", "full": "[2026-03-17] Session: Ran LongMemEval baseline. Temporal-reasoning at 46.6% \u2014 worst category. Identified SESSION_SUMMARY layer as the key missing piece.", "type": "SESSION", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session"], "activation_count": 3, "created_at": "2026-03-20", "color": "#90a4ae", "opacity": 1.0, "superseded_at": null}, {"id": "0d0e00bd", "label": "[2026-03-19] Session: Shipped episodic layer. Ablation: S\u2026", "full": "[2026-03-19] Session: Shipped episodic layer. Ablation: SESSION_SUMMARY = +20pp. Spot check 67.5% Haiku \u2014 matches v0.1 Sonnet at 1/10th cost.", "type": "SESSION", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session"], "activation_count": 3, "created_at": "2026-03-20", "color": "#90a4ae", "opacity": 1.0, "superseded_at": null}, {"id": "4c459bca", "label": "[2026-03-20] Session: Full v0.3 Sonnet run complete. 79.8\u2026", "full": "[2026-03-20] Session: Full v0.3 Sonnet run complete. 79.8% (+13pp). Tagged v0.3.0. Published GitHub Release. Every category improved.", "type": "SESSION", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session"], "activation_count": 4, "created_at": "2026-03-20", "color": "#90a4ae", "opacity": 1.0, "superseded_at": null}, {"id": "53b1f949", "label": "[2026-03-17] Summary: LongMemEval baseline run. Identifie\u2026", "full": "[2026-03-17] Summary: LongMemEval baseline run. Identified temporal-reasoning (46.6%) and multi-session as weakest. Planned episodic SESSION_SUMMARY layer as primary fix.", "type": "SESSION_SUMMARY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session_summary"], "activation_count": 4, "created_at": "2026-03-20", "color": "#4dd0e1", "opacity": 1.0, "superseded_at": null}, {"id": "d986acb1", "label": "[2026-03-19] Summary: Shipped v0.2 episodic layer. SESSIO\u2026", "full": "[2026-03-19] Summary: Shipped v0.2 episodic layer. SESSION_SUMMARY nodes, retrieval fusion, 3-mode routing. Ablation confirmed +20pp from summaries. Spot check 67.5% Haiku.", "type": "SESSION_SUMMARY", "salience": 0.3, "is_core": false, "zone": "active", "tags": ["session_summary"], "activation_count": 4, "created_at": "2026-03-20", "color": "#4dd0e1", "opacity": 1.0, "superseded_at": null}, {"id": "7230510c", "label": "[2026-03-20] Summary: Full v0.3 Sonnet run \u2014 79.8% overal\u2026", "full": "[2026-03-20] Summary: Full v0.3 Sonnet run \u2014 79.8% overall, +13pp over v0.1. Temporal: 46.6% \u2192 75.9% (+29.3pp). Every category improved. Tagged v0.3.0.", "type": "SESSION_SUMMARY", "salience": 0.617, "is_core": true, "zone": "active", "tags": ["session_summary"], "activation_count": 15, "created_at": "2026-03-20", "color": "#4dd0e1", "opacity": 1.0, "superseded_at": null}], "links": [{"source": "ee5c3b29", "target": "cb403acc", "type": "WORKS_ON", "weight": 0.9, "color": "#58a6ff"}, {"source": "ee5c3b29", "target": "a873eae1", "type": "WORKS_ON", "weight": 0.8, "color": "#58a6ff"}, {"source": "ee5c3b29", "target": "1fa49db0", "type": "WORKS_ON", "weight": 0.95, "color": "#58a6ff"}, {"source": "ee5c3b29", "target": "c76482ed", "type": "PREFERS", "weight": 0.9, "color": "#ffb74d"}, {"source": "ee5c3b29", "target": "327a6991", "type": "PREFERS", "weight": 0.95, "color": "#ffb74d"}, {"source": "ee5c3b29", "target": "3dcfd465", "type": "PREFERS", "weight": 0.85, "color": "#ffb74d"}, {"source": "ee5c3b29", "target": "a67a92fd", "type": "PREFERS", "weight": 0.8, "color": "#ffb74d"}, {"source": "327a6991", "target": "5a1f4321", "type": "CO_OCCURS", "weight": 0.9, "color": "#4a7fa5"}, {"source": "c76482ed", "target": "a1c67400", "type": "SUPERSEDES", "weight": 0.95, "color": "#f85149"}, {"source": "5be62d79", "target": "00532856", "type": "SUPERSEDES", "weight": 0.9, "color": "#f85149"}, {"source": "3f5d659f", "target": "5be62d79", "type": "CO_OCCURS", "weight": 0.85, "color": "#4a7fa5"}, {"source": "3f5d659f", "target": "00532856", "type": "CO_OCCURS", "weight": 0.7, "color": "#4a7fa5"}, {"source": "cb403acc", "target": "b2bfdd8d", "type": "USES", "weight": 0.9, "color": "#58a6ff"}, {"source": "cb403acc", "target": "4f7c1819", "type": "USES", "weight": 0.8, "color": "#58a6ff"}, {"source": "cb403acc", "target": "ea218e54", "type": "USES", "weight": 0.8, "color": "#58a6ff"}, {"source": "cb403acc", "target": "f94132f6", "type": "USES", "weight": 0.7, "color": "#58a6ff"}, {"source": "a873eae1", "target": "b83e2a7e", "type": "USES", "weight": 0.9, "color": "#58a6ff"}, {"source": "a873eae1", "target": "5be62d79", "type": "USES", "weight": 0.85, "color": "#58a6ff"}, {"source": "a873eae1", "target": "3a788340", "type": "USES", "weight": 0.7, "color": "#58a6ff"}, {"source": "1fa49db0", "target": "55006b1e", "type": "USES", "weight": 0.95, "color": "#58a6ff"}, {"source": "1fa49db0", "target": "ce820731", "type": "USES", "weight": 0.9, "color": "#58a6ff"}, {"source": "1fa49db0", "target": "d369e51b", "type": "USES", "weight": 0.85, "color": "#58a6ff"}, {"source": "1fa49db0", "target": "bb3c6715", "type": "CO_OCCURS", "weight": 0.8, "color": "#4a7fa5"}, {"source": "55006b1e", "target": "dfe80517", "type": "SUPPORTS_FACT", "weight": 0.85, "color": "#4dd0e1"}, {"source": "d369e51b", "target": "ed385cc2", "type": "SUPPORTS_FACT", "weight": 0.8, "color": "#4dd0e1"}, {"source": "28ca117c", "target": "1fa49db0", "type": "CO_OCCURS", "weight": 0.8, "color": "#4a7fa5"}, {"source": "dbfcf893", "target": "bb3c6715", "type": "SUPPORTS_FACT", "weight": 0.9, "color": "#4dd0e1"}, {"source": "0b1de94a", "target": "ce820731", "type": "SUPPORTS_FACT", "weight": 0.9, "color": "#4dd0e1"}, {"source": "cd77a102", "target": "bb3c6715", "type": "SUPPORTS_FACT", "weight": 0.95, "color": "#4dd0e1"}, {"source": "cd77a102", "target": "1fa49db0", "type": "CO_OCCURS", "weight": 0.9, "color": "#4a7fa5"}, {"source": "5dc77568", "target": "cb403acc", "type": "CO_OCCURS", "weight": 0.9, "color": "#4a7fa5"}, {"source": "d986acb1", "target": "53b1f949", "type": "TEMPORALLY_AFTER", "weight": 0.9, "color": "#d29922"}, {"source": "7230510c", "target": "d986acb1", "type": "TEMPORALLY_AFTER", "weight": 0.9, "color": "#d29922"}, {"source": "53b1f949", "target": "bb3c6715", "type": "SUPPORTS_FACT", "weight": 0.85, "color": "#4dd0e1"}, {"source": "53b1f949", "target": "dbfcf893", "type": "SUPPORTS_FACT", "weight": 0.8, "color": "#4dd0e1"}, {"source": "d986acb1", "target": "ce820731", "type": "SUPPORTS_FACT", "weight": 0.9, "color": "#4dd0e1"}, {"source": "d986acb1", "target": "0b1de94a", "type": "SUPPORTS_FACT", "weight": 0.85, "color": "#4dd0e1"}, {"source": "7230510c", "target": "cd77a102", "type": "SUPPORTS_FACT", "weight": 0.95, "color": "#4dd0e1"}, {"source": "7230510c", "target": "1fa49db0", "type": "MENTIONS", "weight": 0.8, "color": "#4dd0e1"}, {"source": "7230510c", "target": "bb3c6715", "type": "MENTIONS", "weight": 0.8, "color": "#4dd0e1"}, {"source": "ee5d717a", "target": "53b1f949", "type": "SUPPORTS_FACT", "weight": 0.7, "color": "#4dd0e1"}, {"source": "0d0e00bd", "target": "d986acb1", "type": "SUPPORTS_FACT", "weight": 0.7, "color": "#4dd0e1"}, {"source": "4c459bca", "target": "7230510c", "type": "SUPPORTS_FACT", "weight": 0.7, "color": "#4dd0e1"}]};
+const RAW_STATS   = {"nodes": 36, "edges": 43, "core_nodes": 8, "active": 34, "archived": 2, "expired": 0};
+const DEMO_QUERIES = [{"text": "what does Michael prefer for local AI and inference?", "route": "graph", "activated": {"3dcfd465": 1.0, "a873eae1": 1.0, "5a1f4321": 1.0, "327a6991": 1.0, "ee5c3b29": 1.0, "cb403acc": 1.0, "b83e2a7e": 1.0, "d369e51b": 1.0, "5be62d79": 0.588, "3a788340": 0.35, "1fa49db0": 1.0, "c76482ed": 0.552, "a67a92fd": 0.4, "b2bfdd8d": 0.45, "4f7c1819": 0.4, "ea218e54": 0.4, "f94132f6": 0.35, "5dc77568": 0.45, "ed385cc2": 0.4, "00532856": 0.254, "3f5d659f": 0.248, "55006b1e": 0.427, "ce820731": 0.405, "bb3c6715": 0.696, "28ca117c": 0.36, "cd77a102": 0.747, "7230510c": 0.696, "a1c67400": 0.214, "dfe80517": 0.182, "0b1de94a": 0.182, "d986acb1": 0.344, "dbfcf893": 0.162, "53b1f949": 0.153, "4c459bca": 0.126}}, {"text": "when did v0.3 ship and what was the benchmark score?", "route": "episodic", "activated": {"cd77a102": 1.0, "bb3c6715": 1.0, "28ca117c": 1.0, "dbfcf893": 1.0, "0b1de94a": 1.0, "3dcfd465": 1.0, "ed385cc2": 1.0, "ee5d717a": 1.0, "1fa49db0": 1.0, "7230510c": 1.0, "53b1f949": 1.0, "ce820731": 1.0, "d986acb1": 1.0, "ee5c3b29": 1.0, "d369e51b": 0.825, "55006b1e": 0.475, "4c459bca": 0.656, "0d0e00bd": 0.499, "cb403acc": 0.596, "a873eae1": 0.53, "c76482ed": 0.596, "327a6991": 0.629, "a67a92fd": 0.53, "dfe80517": 0.202, "b2bfdd8d": 0.086, "4f7c1819": 0.077, "ea218e54": 0.077, "f94132f6": 0.067, "5dc77568": 0.086, "b83e2a7e": 0.077, "5be62d79": 0.072, "3a788340": 0.059, "a1c67400": 0.091, "5a1f4321": 0.091}}, {"text": "how many benchmark runs have been done?", "route": "episodic", "activated": {"bb3c6715": 1.0, "dbfcf893": 1.0, "cd77a102": 1.0, "1fa49db0": 1.0, "53b1f949": 1.0, "7230510c": 1.0, "ee5c3b29": 0.879, "55006b1e": 0.879, "ce820731": 1.0, "d369e51b": 0.786, "28ca117c": 0.74, "d986acb1": 1.0, "ee5d717a": 0.289, "4c459bca": 0.656, "cb403acc": 0.182, "a873eae1": 0.162, "c76482ed": 0.182, "327a6991": 0.192, "3dcfd465": 0.172, "a67a92fd": 0.162, "dfe80517": 0.172, "0b1de94a": 0.497, "ed385cc2": 0.145, "0d0e00bd": 0.268}}, {"text": "has the inference backend ever changed?", "route": "hybrid", "activated": {"3f5d659f": 1.0, "ea218e54": 1.0, "5be62d79": 1.0, "c76482ed": 1.0, "a67a92fd": 1.0, "ee5d717a": 1.0, "4c459bca": 1.0, "7230510c": 1.0, "00532856": 0.8, "cb403acc": 1.0, "a873eae1": 1.0, "ee5c3b29": 1.0, "a1c67400": 0.475, "53b1f949": 1.0, "d986acb1": 1.0, "cd77a102": 1.0, "1fa49db0": 1.0, "bb3c6715": 1.0, "b2bfdd8d": 0.532, "4f7c1819": 0.473, "f94132f6": 0.414, "5dc77568": 0.532, "b83e2a7e": 0.536, "3a788340": 0.417, "327a6991": 0.879, "3dcfd465": 0.786, "dbfcf893": 1.0, "ce820731": 1.0, "0b1de94a": 0.622, "0d0e00bd": 0.37, "55006b1e": 0.665, "d369e51b": 0.595, "28ca117c": 0.56, "5a1f4321": 0.182, "dfe80517": 0.081, "ed385cc2": 0.068}}];
 
 // Populate stats
-document.getElementById("s-nodes").textContent    = RAW_STATS.nodes    ?? 0;
-document.getElementById("s-edges").textContent    = RAW_STATS.edges    ?? 0;
+document.getElementById("s-nodes").textContent    = RAW_STATS.nodes      ?? 0;
+document.getElementById("s-edges").textContent    = RAW_STATS.edges      ?? 0;
 document.getElementById("s-core").textContent     = RAW_STATS.core_nodes ?? 0;
-document.getElementById("s-archived").textContent = RAW_STATS.archived ?? 0;
+document.getElementById("s-archived").textContent = RAW_STATS.archived   ?? 0;
 
 // ---- State ----
-let activeZones   = new Set(["active"]);
+let activeZones   = new Set(["active", "archived"]);
 let hiddenTypes   = new Set();
 let selectedNode  = null;
+let activeQuery   = null;
+
+// ---- Build query chips ----
+const examplesEl = document.getElementById("query-examples");
+DEMO_QUERIES.forEach((q, i) => {
+  const chip = document.createElement("button");
+  chip.className = "query-chip";
+  chip.textContent = q.text;
+  chip.onclick = () => runQuery(i);
+  examplesEl.appendChild(chip);
+});
+
+document.getElementById("query-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const text = e.target.value.trim();
+    if (!text) return;
+    const idx = DEMO_QUERIES.findIndex(q =>
+      q.text.toLowerCase().includes(text.toLowerCase()) ||
+      text.toLowerCase().includes(q.text.toLowerCase().split(" ")[0])
+    );
+    if (idx >= 0) runQuery(idx);
+  }
+});
 
 // ---- SVG setup ----
 const svg    = d3.select("#graph-svg");
@@ -362,7 +547,6 @@ function buildGraph() {
 
   const { nodes, links } = visibleData();
 
-  // Deep-copy so D3 can mutate positions
   const nodesCopy = nodes.map(d => ({ ...d }));
   const nodeMap   = new Map(nodesCopy.map(d => [d.id, d]));
   const linksCopy = links.map(l => ({
@@ -381,14 +565,16 @@ function buildGraph() {
     .alphaDecay(0.012)
     .velocityDecay(0.35);
 
-  // Links
+  // Links — colored by type, dashed for SUPERSEDES
   linkSel = container.append("g").selectAll("line")
     .data(linksCopy).join("line")
     .attr("class", "link")
-    .attr("stroke-width", d => Math.max(1, d.weight * 3))
+    .attr("stroke",           d => d.color || "#4a7fa5")
+    .attr("stroke-width",     d => d.type === "SUPERSEDES" ? 2 : Math.max(1, d.weight * 2.5))
+    .attr("stroke-dasharray", d => d.type === "SUPERSEDES" ? "6,3" : null)
     .attr("marker-end", "url(#arrowhead)");
 
-  // Edge labels (hidden by default, shown on hover)
+  // Edge labels (shown on hover)
   edgeLabelSel = container.append("g").selectAll("text")
     .data(linksCopy).join("text")
     .attr("class", "edge-label")
@@ -410,7 +596,7 @@ function buildGraph() {
     .attr("r",      d => nodeRadius(d))
     .attr("fill",   d => d.color)
     .attr("fill-opacity", d => d.opacity)
-    .attr("stroke", d => d.zone === "archived" ? "#484f58" : "none")
+    .attr("stroke", d => d.zone === "archived" ? "#f85149" : "none")
     .attr("stroke-dasharray", d => d.zone === "archived" ? "4,2" : null)
     .attr("stroke-width", 1.5);
 
@@ -420,18 +606,19 @@ function buildGraph() {
     .attr("class", "core-ring")
     .attr("r", d => nodeRadius(d) + 4);
 
-  // Labels (always shown for core, hidden otherwise)
+  // Labels
   labelSel = nodeGroup.append("text")
     .attr("class", "node-label")
     .attr("dy", d => nodeRadius(d) + 12)
     .text(d => d.label.length > 28 ? d.label.slice(0, 26) + "…" : d.label)
     .style("display", null);
 
-  // Tooltip on hover
+  // Tooltip
   const tooltip = document.getElementById("tooltip");
   nodeGroup
     .on("mouseover", (event, d) => {
-      document.getElementById("tt-type").textContent    = d.type + (d.is_core ? " ★ CORE" : "");
+      const archivedTag = d.zone === "archived" ? " ⚠ ARCHIVED" : "";
+      document.getElementById("tt-type").textContent    = d.type + (d.is_core ? " ★ CORE" : "") + archivedTag;
       document.getElementById("tt-content").textContent = d.label;
       tooltip.style.opacity = "1";
     })
@@ -445,15 +632,15 @@ function buildGraph() {
       selectNode(d, nodeGroup, linksCopy, nodeMap);
     });
 
-  // Show edge labels on link hover
+  // Edge label on hover
   linkSel
     .on("mouseover", function(event, d) {
-      d3.select(this).attr("stroke", "#58a6ff").attr("stroke-opacity", 1).attr("stroke-width", d => Math.max(2, d.weight * 4));
+      d3.select(this).attr("stroke-opacity", 1).attr("stroke-width", d => Math.max(2, d.weight * 4));
       const idx = linksCopy.indexOf(d);
       edgeLabelSel.filter((_, i) => i === idx).style("display", null);
     })
     .on("mouseout",  function(event, d) {
-      d3.select(this).attr("stroke", "#4a7fa5").attr("stroke-opacity", 0.5).attr("stroke-width", d => Math.max(1, d.weight * 3));
+      d3.select(this).attr("stroke-opacity", 0.55).attr("stroke-width", d => d.type === "SUPERSEDES" ? 2 : Math.max(1, d.weight * 2.5));
       edgeLabelSel.style("display", "none");
     });
 
@@ -472,6 +659,9 @@ function buildGraph() {
   });
 
   simulation.on("end", () => fitToView(nodesCopy));
+
+  // Re-apply active query highlight if any
+  if (activeQuery !== null) applyQueryHighlight(activeQuery);
 }
 
 function fitToView(nodes) {
@@ -492,11 +682,93 @@ function fitToView(nodes) {
   );
 }
 
+// ---- Query mode ----
+function runQuery(idx) {
+  activeQuery = idx;
+  const q = DEMO_QUERIES[idx];
+
+  // Update chip styles
+  document.querySelectorAll(".query-chip").forEach((c, i) => {
+    c.classList.toggle("active", i === idx);
+  });
+  document.getElementById("query-input").value = q.text;
+
+  // Routing badge
+  const badgeEl = document.getElementById("route-badge");
+  badgeEl.style.display = "block";
+  badgeEl.innerHTML = `Route: <span class="badge badge-${q.route}">${q.route}</span>`;
+
+  // Activation list
+  const listEl = document.getElementById("activation-list");
+  listEl.style.display = "block";
+  const sorted = Object.entries(q.activated).sort((a, b) => b[1] - a[1]).slice(0, 7);
+  listEl.innerHTML = "<div style='font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;'>Why these surfaced</div>" +
+    sorted.map(([nid, level]) => {
+      const node = RAW_DATA.nodes.find(n => n.id === nid);
+      if (!node) return "";
+      const pct = Math.round(level * 100);
+      return `<div class="activated-item" onclick="window.highlightById('${nid}')">
+        <div class="activated-item-header">
+          <span class="activated-item-type">${node.type}</span>
+          <span style="color:#58a6ff;font-size:10px">${pct}%</span>
+        </div>
+        <span class="activated-item-label">${node.label}</span>
+        <div class="activation-bar-wrap"><div class="activation-bar" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join("");
+
+  document.getElementById("clear-query").style.display = "block";
+
+  applyQueryHighlight(idx);
+}
+
+function applyQueryHighlight(idx) {
+  const q = DEMO_QUERIES[idx];
+  const activated = q.activated;
+
+  container.selectAll(".node").each(function(d) {
+    const level = activated[d.id] || 0;
+    const circle = d3.select(this).select("circle");
+    if (level > 0) {
+      circle.attr("fill-opacity", Math.max(0.6, level));
+      if (level > 0.5) {
+        circle.style("filter", `drop-shadow(0 0 ${Math.round(4 + level * 8)}px ${d.color})`);
+      } else {
+        circle.style("filter", null);
+      }
+    } else {
+      circle.attr("fill-opacity", d.opacity * 0.12).style("filter", null);
+    }
+  });
+
+  if (linkSel) {
+    linkSel.attr("stroke-opacity", l => {
+      const s = l.source.id ?? l.source;
+      const t = l.target.id ?? l.target;
+      return (activated[s] > 0 && activated[t] > 0) ? 0.85 : 0.06;
+    });
+  }
+}
+
+function clearQuery() {
+  activeQuery = null;
+  document.querySelectorAll(".query-chip").forEach(c => c.classList.remove("active"));
+  document.getElementById("query-input").value = "";
+  document.getElementById("route-badge").style.display = "none";
+  document.getElementById("activation-list").style.display = "none";
+  document.getElementById("clear-query").style.display = "none";
+
+  container.selectAll(".node circle")
+    .attr("fill-opacity", d => d.opacity)
+    .style("filter", null);
+  if (linkSel) linkSel.attr("stroke-opacity", 0.55);
+}
+
+// ---- Node selection ----
 function selectNode(d, nodeGroup, linksCopy, nodeMap) {
   selectedNode = d.id;
   nodeGroup.classed("selected", n => n.id === d.id);
 
-  // Highlight connected nodes
   const connectedIds = new Set([d.id]);
   const connectedLinks = linksCopy.filter(l => {
     const s = l.source.id ?? l.source;
@@ -506,17 +778,17 @@ function selectNode(d, nodeGroup, linksCopy, nodeMap) {
   });
 
   nodeGroup.selectAll("circle").attr("fill-opacity", n =>
-    connectedIds.has(n.id) ? n.opacity : n.opacity * 0.25
+    connectedIds.has(n.id) ? n.opacity : n.opacity * 0.2
   );
-  linkSel.attr("stroke-opacity", l => {
+  if (linkSel) linkSel.attr("stroke-opacity", l => {
     const s = l.source.id ?? l.source;
     const t = l.target.id ?? l.target;
-    return (s === d.id || t === d.id) ? 0.9 : 0.1;
+    return (s === d.id || t === d.id) ? 0.9 : 0.08;
   });
 
-  // Detail panel
   const panel  = document.getElementById("detail-content");
-  const coreBadge = d.is_core ? '<div class="core-badge">★ CORE MEMORY</div>' : "";
+  const coreBadge     = d.is_core    ? '<span class="core-badge">★ CORE MEMORY</span>' : "";
+  const archivedBadge = d.zone === "archived" ? '<span class="archived-badge">⚠ ARCHIVED</span>' : "";
   const tagStr = d.tags.length ? d.tags.join(", ") : "—";
 
   const connections = connectedLinks.map(l => {
@@ -524,21 +796,23 @@ function selectNode(d, nodeGroup, linksCopy, nodeMap) {
     const other   = nodeMap.get(otherId);
     const dir     = (l.source.id ?? l.source) === d.id ? "→" : "←";
     if (!other) return "";
+    const edgeColor = l.color || "#58a6ff";
     return `<div class="connected-node" onclick="highlightById('${other.id}')">
-      <span class="edge-type">${dir} ${l.type}</span><br>
+      <span class="edge-type" style="color:${edgeColor}">${dir} ${l.type}</span><br>
       <span class="node-label">${other.label}</span>
     </div>`;
   }).join("");
 
   panel.innerHTML = `
-    ${coreBadge}
+    <div style="margin-bottom:8px">${coreBadge}${archivedBadge}</div>
     <div class="detail-node-content">${d.full}</div>
-    <div class="detail-row"><span class="detail-key">Type</span>       <span class="detail-val">${d.type}</span></div>
-    <div class="detail-row"><span class="detail-key">Zone</span>       <span class="detail-val">${d.zone}</span></div>
-    <div class="detail-row"><span class="detail-key">Salience</span>   <span class="detail-val">${d.salience}</span></div>
-    <div class="detail-row"><span class="detail-key">Activations</span><span class="detail-val">${d.activation_count}</span></div>
-    <div class="detail-row"><span class="detail-key">Created</span>    <span class="detail-val">${d.created_at}</span></div>
-    <div class="detail-row"><span class="detail-key">Tags</span>       <span class="detail-val">${tagStr}</span></div>
+    <div class="detail-row"><span class="detail-key">Type</span>        <span class="detail-val">${d.type}</span></div>
+    <div class="detail-row"><span class="detail-key">Zone</span>        <span class="detail-val">${d.zone}</span></div>
+    <div class="detail-row"><span class="detail-key">Salience</span>    <span class="detail-val">${d.salience}</span></div>
+    <div class="detail-row"><span class="detail-key">Activations</span> <span class="detail-val">${d.activation_count}</span></div>
+    <div class="detail-row"><span class="detail-key">Created</span>     <span class="detail-val">${d.created_at}</span></div>
+    <div class="detail-row"><span class="detail-key">Tags</span>        <span class="detail-val">${tagStr}</span></div>
+    ${d.superseded_at ? `<div class="detail-row"><span class="detail-key">Superseded</span><span class="detail-val" style="color:#f85149">${d.superseded_at.slice(0,10)}</span></div>` : ""}
     ${connections ? `<div style="margin-top:12px;font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Connections (${connectedLinks.length})</div>${connections}` : ""}
   `;
 }
@@ -546,8 +820,12 @@ function selectNode(d, nodeGroup, linksCopy, nodeMap) {
 function clearSelection(nodeGroup) {
   selectedNode = null;
   nodeGroup.classed("selected", false);
-  nodeGroup.selectAll("circle").attr("fill-opacity", d => d.opacity);
-  if (linkSel) linkSel.attr("stroke-opacity", 0.6);
+  if (activeQuery !== null) {
+    applyQueryHighlight(activeQuery);
+  } else {
+    nodeGroup.selectAll("circle").attr("fill-opacity", d => d.opacity);
+    if (linkSel) linkSel.attr("stroke-opacity", 0.55);
+  }
   document.getElementById("detail-content").innerHTML = '<span style="color:#484f58">Click a node to inspect it.</span>';
 }
 
@@ -576,7 +854,6 @@ document.getElementById("search-input").addEventListener("input", function() {
   const q = this.value.toLowerCase().trim();
   if (!q) {
     container.selectAll(".node circle").attr("fill-opacity", d => d.opacity);
-    container.selectAll(".node-label").style("display", d => d.is_core ? null : "none");
     return;
   }
   container.selectAll(".node").each(function(d) {
@@ -590,7 +867,6 @@ document.getElementById("search-input").addEventListener("input", function() {
 buildGraph();
 window.addEventListener("resize", buildGraph);
 
-// Allow clicking connected nodes from detail panel
 window.highlightById = function(id) {
   const nodeGroup = container.selectAll(".node");
   const nodesCopy = nodeGroup.data();
