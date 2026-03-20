@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] — 2026-03-20
+
+### Benchmark
+- Full 500-question LongMemEval oracle run: **79.8%** (Sonnet/Sonnet), up from 66.8% in v0.1 (+13.0pp)
+- Every category improved — no regressions
+- temporal-reasoning: 46.6% → 75.9% (+29.3pp), largest absolute gain
+- multi-session: 70.7% → 80.5% (+9.8pp)
+- knowledge-update: 75.6% → 84.6% (+9.0pp)
+- Beats Mem0 (68.4%) and Zep (71.2%) on full 500-question run
+
+### Changed
+- Version bump to 0.3.0
+
 ## [0.2.0] — 2026-03-19
 
 ### Added
