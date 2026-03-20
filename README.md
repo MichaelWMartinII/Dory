@@ -95,6 +95,14 @@ Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_
 
 ---
 
+## Interactive demo
+
+**[Live graph visualization →](https://michaelwmartinii.github.io/Dory/demo.html)**
+
+Force-directed knowledge graph with spreading activation query mode, edge type coloring, archived/superseded nodes, and session summary chain. Click any of the pre-set queries to see retrieval in action.
+
+---
+
 ### Framework adapters
 
 **LangChain** — drop-in `BaseMemory` replacement:
