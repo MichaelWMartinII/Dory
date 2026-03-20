@@ -29,7 +29,7 @@ user       = g.add_node(NodeType.ENTITY, "Michael — solo developer, Murfreesbo
 allergyapp = g.add_node(NodeType.ENTITY, "AllergyFind — B2B allergen platform for restaurants", tags=["project"])
 agent_proj = g.add_node(NodeType.ENTITY, "Agent — local AI companion 'Elwin Ransom'", tags=["project"])
 dory_proj  = g.add_node(NodeType.ENTITY, "Dory — agent memory library (this project)", tags=["project"])
-giovanni   = g.add_node(NodeType.ENTITY, "Giovanni Ristorante Nashville — live customer", tags=["customer"])
+giovanni   = g.add_node(NodeType.ENTITY, "Unnamed restaurant client — live production customer", tags=["customer"])
 qwen       = g.add_node(NodeType.ENTITY, "Qwen3-14B-Q4_K_M — primary local model", tags=["tool"])
 fastapi    = g.add_node(NodeType.ENTITY, "FastAPI — web framework", tags=["tool"])
 supabase   = g.add_node(NodeType.ENTITY, "Supabase / PostgreSQL — AllergyFind backend", tags=["tool"])
@@ -67,7 +67,7 @@ ev2 = g.add_node(NodeType.EVENT, "[2026-03-10] Shipped Dory v0.1 to PyPI — ini
 ev3 = g.add_node(NodeType.EVENT, "[2026-03-17] LongMemEval baseline — v0.1 Sonnet 66.8%, temporal-reasoning only 46.6%", tags=["benchmark"])
 ev4 = g.add_node(NodeType.EVENT, "[2026-03-19] Episodic layer shipped — SESSION_SUMMARY nodes, retrieval fusion, ablation +20pp", tags=["milestone"])
 ev5 = g.add_node(NodeType.EVENT, "[2026-03-20] v0.3 full run — 79.8% Sonnet (+13pp). Beats Mem0 and Zep. Tagged v0.3.0.", tags=["milestone", "benchmark"])
-ev6 = g.add_node(NodeType.EVENT, "[2026-02-15] Giovanni Ristorante went live on AllergyFind — first revenue", tags=["milestone"])
+ev6 = g.add_node(NodeType.EVENT, "[2026-02-15] First restaurant client went live on AllergyFind — first revenue", tags=["milestone"])
 
 # ---------------------------------------------------------------------------
 # Preferences — including the supersession story
@@ -187,7 +187,7 @@ g.add_edge(ev3.id, benchmarks.id, EdgeType.SUPPORTS_FACT, weight=0.9)
 g.add_edge(ev4.id, episodic.id,   EdgeType.SUPPORTS_FACT, weight=0.9)
 g.add_edge(ev5.id, benchmarks.id, EdgeType.SUPPORTS_FACT, weight=0.95)
 g.add_edge(ev5.id, dory_proj.id,  EdgeType.CO_OCCURS,    weight=0.9)
-g.add_edge(ev6.id, allergyapp.id, EdgeType.CO_OCCURS,    weight=0.9)
+g.add_edge(ev6.id,     allergyapp.id, EdgeType.CO_OCCURS,    weight=0.9)
 
 # SESSION_SUMMARY temporal chain
 g.add_edge(ss2.id, ss1.id, EdgeType.TEMPORALLY_AFTER, weight=0.9)
