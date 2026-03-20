@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1] — 2026-03-20
+
+### Changed
+- PyPI description leads with benchmark result (+13pp, 79.8%)
+- README opening rewritten: result first, 5-line temporal overwrite example
+- Added DoryMemory.visualize() — one-liner to open graph in browser
+- Added examples/quickstart.py — zero-dependency end-to-end example
+
 ## [0.3.0] — 2026-03-20
 
 ### Benchmark

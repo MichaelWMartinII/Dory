@@ -1,14 +1,23 @@
 # Dory
 
-**Agent memory that actually sticks.**
+**+13pp on LongMemEval. The best Python-native, local-first agent memory library.**
 
-Named after the fish with no short-term memory — because that's your AI agent right now.
-
-Dory is the best Python-native, local-first agent memory library. Drop it into any LLM pipeline and your agent stops forgetting between sessions.
-
-```python
+```bash
 pip install dory-memory
 ```
+
+```python
+from dory import DoryMemory
+
+mem = DoryMemory()
+mem.observe("User prefers local-first AI")
+mem.observe("User switched from llama.cpp to MLX — 25% faster")
+
+print(mem.query("what does the user prefer for inference?"))
+# → MLX (updated preference, supersedes llama.cpp)
+```
+
+Dory gives your agent persistent, structured memory across sessions — with spreading activation retrieval, principled forgetting, and an episodic layer that scored **79.8% on LongMemEval** (beats Mem0 68.4% and Zep 71.2%). Zero server. Single SQLite file. Works offline.
 
 ---
 
