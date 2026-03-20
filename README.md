@@ -127,7 +127,7 @@ Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_
 
 **[Live graph visualization →](https://michaelwmartinii.github.io/Dory/demo.html)**
 
-![Dory memory graph demo](docs/demo.gif)
+![Dory memory graph demo](https://raw.githubusercontent.com/MichaelWMartinII/Dory/main/docs/demo.gif)
 
 Force-directed knowledge graph with spreading activation query mode, edge type coloring, archived/superseded nodes, and session summary chain. Click any of the pre-set queries to see retrieval in action.
 
