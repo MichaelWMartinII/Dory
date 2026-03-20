@@ -325,8 +325,14 @@ User-meaningful memory is never deleted by forgetting — archived and expired n
 - [x] Staged retrieval — spreading activation → SUPPORTS_FACT traversal → SESSION_SUMMARY injection
 - [x] Behavioral preference synthesis — `Reflector` detects repeated behavioral patterns across sessions and synthesizes PREFERENCE nodes without LLM calls
 
-**In progress (v0.3)**
-- [ ] Full 500-question LongMemEval run (pending credit top-up for Sonnet comparison)
+**Shipped (v0.3)**
+- [x] Full 500-question LongMemEval run — 79.8% Sonnet/Sonnet (+13.0pp over v0.1)
+- [x] Temporal arithmetic prompt — step-by-step date math before answering
+- [x] Count cross-validation — `salient_counts` verified against EVENT nodes, low-confidence flagged
+- [x] Behavioral preference synthesis — `Reflector` synthesizes PREFERENCE nodes from repeated patterns
+
+**In progress (v0.4)**
+- [ ] Preference inference — targeted improvement on single-session-preference (currently 46.7%)
 - [ ] Graph topology demo — `demo_topology.py` showing provenance / evolution queries flat systems can't answer
 - [ ] S-split benchmark — longer sessions (~115K tokens), better test of spreading activation value
 - [ ] Production hardening — concurrent write safety, adversarial memory injection defense
@@ -346,7 +352,20 @@ Dory draws from:
   |---|---|---|---|---|---|
   | v0.1 | Haiku | Haiku | 500 (full) | 54.4% | Baseline |
   | v0.1 | Sonnet | Sonnet | 500 (full) | 66.8% | |
-  | v0.3 | Haiku | Haiku | 40 (spot check) | **67.5%** | All Phase 2 fixes |
+  | v0.3 | Haiku | Haiku | 40 (spot check) | 67.5% | Episodic hybrid, spot check |
+  | **v0.3** | **Sonnet** | **Sonnet** | **500 (full)** | **79.8%** | **Episodic hybrid, full run** |
+
+  Category breakdown (v0.3 Sonnet, 500q):
+
+  | Category | v0.1 Sonnet | v0.3 Sonnet | Δ |
+  |---|---|---|---|
+  | temporal-reasoning | 46.6% | 75.9% | +29.3pp |
+  | knowledge-update | 75.6% | 84.6% | +9.0pp |
+  | multi-session | 70.7% | 80.5% | +9.8pp |
+  | single-session-assistant | 82.1% | 87.5% | +5.4pp |
+  | single-session-user | 85.7% | 88.6% | +2.9pp |
+  | single-session-preference | 43.3% | 46.7% | +3.3pp |
+  | **Overall** | **66.8%** | **79.8%** | **+13.0pp** |
 
   ¹ Mastra uses GPT-4o-mini (TypeScript). Dory uses Claude on Python. Architecturally
   different stacks — not directly comparable. See [ablation study](benchmarks/ABLATION.md)
