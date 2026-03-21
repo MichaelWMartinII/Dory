@@ -347,6 +347,47 @@ User-meaningful memory is never deleted by forgetting — archived and expired n
 
 ---
 
+## Graph topology — what flat search can't do
+
+Run [`examples/demo_topology.py`](examples/demo_topology.py) to see six live graph traversals:
+
+```
+Q1 · Supersession — "What was the inference backend before MLX replaced it?"
+
+  ┌ BEFORE  [PREFERENCE]  Prefers llama.cpp — cross-platform, well-supported
+  │         zone=archived  archived=2026-03-01
+  ├─SUPERSEDES──▶
+  └ AFTER   [PREFERENCE]  Prefers MLX over llama.cpp on Apple Silicon (20-30% faster)
+
+  ✗ Flat search: returns both nodes with equal score. No directionality. No timestamp.
+
+──────────────────────────────────────────────────────────────────────
+Q4 · Semantic Path — "How does local-first philosophy connect to the 79.8% result?"
+
+  ● [CONCEPT]    Local-first AI — data stays on device, no cloud
+    └─[CO_OCCURS]──▶
+  ● [PREFERENCE] Prefers local-first — no data leaves device unless necessary
+    └─[PREFERS]──▶
+  ● [ENTITY]     Michael — solo developer
+    └─[WORKS_ON]──▶
+  ● [ENTITY]     Dory — agent memory library
+    └─[CO_OCCURS]──▶
+  ● [EVENT]      [2026-03-20] v0.3 full run — 79.8% Sonnet (+13pp)
+
+  ✗ Flat search: returns both endpoints as separate results. No connecting path.
+```
+
+| Query | Traversal | What it answers |
+|---|---|---|
+| Q1 Supersession | `SUPERSEDES` edges | What changed and when |
+| Q2 Chronicle | `TEMPORALLY_AFTER` chain | Full session history in order |
+| Q3 Dependencies | `USES` traversal (depth 2) | What a project actually needs |
+| Q4 Semantic Path | BFS across typed edges | How two concepts connect |
+| Q5 Provenance | `SUPPORTS_FACT` traversal | What proves a specific fact |
+| Q6 Belief Grounding | `SUPPORTS_FACT` + `BELIEF` | Which beliefs have evidence |
+
+None of these are answerable by cosine similarity alone. They require directed, typed edges between persistent nodes.
+
 ## Roadmap
 
 **Shipped (v0.1)**
