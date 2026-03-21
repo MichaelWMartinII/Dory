@@ -1,6 +1,6 @@
 # Dory
 
-**+13pp on LongMemEval. The best Python-native, local-first agent memory library.**
+**79.8% on LongMemEval. The best Python-native, local-first agent memory library.**
 
 ```bash
 pip install dory-memory
