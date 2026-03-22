@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.5] — 2026-03-22
+
+### Fixed
+- Preference recall: `_PREFERENCE_RE` broadened to match actual recommendation question phrasing
+  ("any advice on...", "can you suggest...", "any tips on...", "what should I..."). Previously,
+  preference questions using generic language routed to plain graph mode and missed PREFERENCE
+  nodes and SESSION narratives. Now routes to a dedicated `_preference_context()` function.
+- Added `_preference_context()`: surfaces all PREFERENCE nodes first (regardless of activation
+  level), then FTS-expanded semantic nodes, then full SESSION history. Ensures stored preferences
+  are front-and-center when answering recommendation questions.
+- Routing bug: `_PREFERENCE_RE` is now checked before `_TEMPORAL_RE` in `_route_query`. Previously,
+  time words like "tonight" or "today" in preference questions ("any movie recommendations for
+  tonight?") caused misrouting to episodic mode, producing empty context. Preference signal now
+  takes priority over incidental temporal language.
+- Observer (`_call_anthropic`): increased `max_tokens` from 1024 to 4096. Long conversations
+  (>~15k chars) were producing truncated JSON responses that silently failed extraction — 0 nodes
+  written, no error surfaced. Affected all Anthropic-backend users with lengthy sessions.
+
 ## [0.3.4] — 2026-03-21
 
 ### Fixed

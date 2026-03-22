@@ -37,7 +37,6 @@ except Exception:
 
 mcp = FastMCP(
     "Dory Memory",
-    version=_version,
     instructions=(
         "Dory is a persistent memory graph for AI agents. "
         "Use dory_query at the start of a session to load relevant context. "

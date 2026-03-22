@@ -4,7 +4,7 @@ import re
 from typing import Literal
 
 from .graph import Graph
-from .schema import NodeType, EdgeType, new_id
+from .schema import NodeType, EdgeType, new_id, ZONE_ARCHIVED
 from . import activation as act
 from . import consolidation
 from . import store
@@ -71,13 +71,21 @@ _HYBRID_RE = re.compile(
 )
 
 
-# Preference questions asking for personalized recommendations or suggestions
-# need episodic context (what has the user actually done?) not just PREFERENCE nodes.
+# Preference questions asking for personalized recommendations or suggestions.
+# Needs to match generic phrasing ("any advice", "can you suggest") used in benchmarks.
 _PREFERENCE_RE = re.compile(
-    r"\b(would I (?:like|enjoy|prefer)|suggest(?:ions)? for me|"
-    r"based on (?:my|what I)|recommend for me|what should I get|"
+    r"\b("
+    r"would I (?:like|enjoy|prefer)|"
+    r"suggest(?:ions?)? for (?:my|me)|"
+    r"based on (?:my|what I)|"
+    r"recommend(?:ation)?s? for (?:my|me)|"
+    r"what should I get|"
     r"what kind of .{0,20} (?:do|would) I|"
-    r"any suggestions? for (?:my|me))\b",
+    r"any (?:\w+ )?(?:suggestions?|recommendations?|advice|tips?|ideas?)\b|"
+    r"(?:can you |could you )(?:suggest|recommend)\b|"
+    r"what should I\b|"
+    r"what would you (?:recommend|suggest)"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -92,10 +100,10 @@ def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid"]:
     """
     if _HYBRID_RE.search(topic):
         return "hybrid"
-    if _AGGREGATION_RE.search(topic) or _TEMPORAL_RE.search(topic):
-        return "episodic"
     if _PREFERENCE_RE.search(topic):
         return "hybrid"
+    if _AGGREGATION_RE.search(topic) or _TEMPORAL_RE.search(topic):
+        return "episodic"
     return "graph"
 
 
@@ -284,6 +292,63 @@ def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summa
     )
 
 
+def _preference_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+    """
+    For preference/recommendation questions: surface ALL PREFERENCE nodes first,
+    then FTS-expanded semantic nodes, then SESSION narratives.
+
+    PREFERENCE nodes are shown regardless of activation level — even low-salience
+    stored preferences are relevant when answering recommendation questions.
+    """
+    # All non-archived PREFERENCE nodes, highest salience first
+    pref_nodes = sorted(
+        [n for n in graph.all_nodes() if n.type == NodeType.PREFERENCE and n.zone != ZONE_ARCHIVED],
+        key=lambda n: -n.salience,
+    )
+
+    # FTS expansion on the topic to pull topically relevant non-preference nodes
+    terms = _key_terms(topic, n=8)
+    fts_ids: set[str] = set()
+    if terms:
+        or_query = " OR ".join(terms.split())
+        fts_ids = set(store.search_fts(or_query, graph.path, limit=100))
+
+    expanded: dict[str, float] = {
+        nid: lvl for nid, lvl in activated.items()
+        if graph.get_node(nid) and graph.get_node(nid).type != NodeType.PREFERENCE
+        and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
+    }
+    for nid in fts_ids:
+        node = graph.get_node(nid)
+        if node and node.type != NodeType.PREFERENCE and node.type.value not in ("SESSION", "SESSION_SUMMARY"):
+            if nid not in expanded:
+                expanded[nid] = 0.3
+
+    parts = []
+
+    if pref_nodes:
+        pref_lines = ["Stored preferences:"]
+        for node in pref_nodes:
+            core_marker = " [CORE]" if node.is_core else ""
+            pref_lines.append(f"- [PREFERENCE{core_marker}] {node.content}")
+        parts.append("\n".join(pref_lines))
+
+    if expanded:
+        parts.append(act.serialize(expanded, graph, max_nodes=30))
+
+    session_nodes = sorted(
+        [n for n in graph.all_nodes() if n.type.value == "SESSION"],
+        key=lambda n: _parse_session_date(n.content),
+    )
+    if session_nodes:
+        sess_lines = ["Session history (context on user experiences):"]
+        for node in session_nodes:
+            sess_lines.append(f"- {node.content}")
+        parts.append("\n".join(sess_lines))
+
+    return "\n\n".join(p for p in parts if p) or "(no relevant memories found)"
+
+
 def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5, weight: float = 0.5) -> int:
     """
     Find existing nodes related to content via FTS and create CO_OCCURS edges.
@@ -340,6 +405,8 @@ def query(topic: str, graph: Graph) -> str:
         summaries = _get_linked_summaries(activated, graph, limit=3)
 
     if route == "hybrid":
+        if _PREFERENCE_RE.search(topic):
+            return _preference_context(topic, graph, activated)
         return _hybrid_context(topic, graph, activated, summaries)
 
     if route == "episodic":

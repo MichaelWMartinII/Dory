@@ -149,7 +149,7 @@ def _call_anthropic(turns_text: str, model: str, api_key: str, session_date: str
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model=model,
-            max_tokens=1024,
+            max_tokens=4096,
             system=_SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": _user_message(turns_text, session_date)}
