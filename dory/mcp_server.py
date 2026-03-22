@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from importlib.metadata import version as _pkg_version
 from mcp.server.fastmcp import FastMCP
 
 from .graph import Graph
@@ -29,8 +30,14 @@ def _graph() -> Graph:
     return Graph(path=_db_path())
 
 
+try:
+    _version = _pkg_version("dory-memory")
+except Exception:
+    _version = "0.0.0"
+
 mcp = FastMCP(
     "Dory Memory",
+    version=_version,
     instructions=(
         "Dory is a persistent memory graph for AI agents. "
         "Use dory_query at the start of a session to load relevant context. "

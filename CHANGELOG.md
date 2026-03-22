@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.4] — 2026-03-21
+
+### Fixed
+- `DEFAULT_GRAPH_PATH` now resolves to `~/.dory/engram.db` instead of `site-packages/engram.db`. Previously, using `dory-mcp` or `DoryMemory()` without an explicit `db_path` would silently write the user's memory graph inside the Python package installation directory — ephemeral and wrong.
+- MCP server now reports the correct `dory-memory` package version in the initialize handshake instead of the MCP library version.
+
+### Changed
+- README MCP setup section rewritten: shows `which dory-mcp` step (required for venv installs), canonical `--db ~/.dory/engram.db` form, `claude mcp list` verification step, `DORY_DB_PATH` env var, and Claude Desktop config.
+
 ## [0.3.3] — 2026-03-21
 
 ### Added

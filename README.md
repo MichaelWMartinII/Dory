@@ -116,14 +116,33 @@ messages = result.as_openai_messages(user_query)      # OpenAI / compat
 ```bash
 pip install 'dory-memory[mcp]'
 
-# Register globally across all Claude Code projects
-claude mcp add --scope user dory -- dory-mcp
+# Find the installed binary path (needed if installed in a venv)
+which dory-mcp
 
-# Or with a specific DB path
-claude mcp add --scope user dory -- dory-mcp --db /path/to/engram.db
+# Register globally across all Claude Code projects
+claude mcp add --scope user dory -- /full/path/to/dory-mcp --db ~/.dory/engram.db
+```
+
+The `--db` path defaults to `~/.dory/engram.db` if omitted. You can also set `DORY_DB_PATH` as an environment variable instead.
+
+Verify the server connected:
+```bash
+claude mcp list   # should show dory ✓ Connected
 ```
 
 Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_visualize`, `dory_stats`.
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "dory": {
+      "command": "/full/path/to/dory-mcp",
+      "args": ["--db", "/Users/you/.dory/engram.db"]
+    }
+  }
+}
+```
 
 ---
 

@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-DEFAULT_GRAPH_PATH = Path(__file__).parent.parent / "engram.db"
+DEFAULT_GRAPH_PATH = Path.home() / ".dory" / "engram.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
