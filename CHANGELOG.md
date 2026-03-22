@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6] — 2026-03-22
+
+### Fixed
+- Routing: added `(?:what do|do) you think` to `_PREFERENCE_RE` so questions like
+  "Do you think it might be my allergies?" and "What do you think about my training
+  plan?" correctly route to preference context instead of plain graph mode.
+
 ## [0.3.5] — 2026-03-22
 
 ### Fixed

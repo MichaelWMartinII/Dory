@@ -84,7 +84,8 @@ _PREFERENCE_RE = re.compile(
     r"any (?:\w+ )?(?:suggestions?|recommendations?|advice|tips?|ideas?)\b|"
     r"(?:can you |could you )(?:suggest|recommend)\b|"
     r"what should I\b|"
-    r"what would you (?:recommend|suggest)"
+    r"what would you (?:recommend|suggest)|"
+    r"(?:what do|do) you think\b"
     r")\b",
     re.IGNORECASE,
 )
