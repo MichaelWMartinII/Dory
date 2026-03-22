@@ -66,12 +66,28 @@ Rules:
   positive ("I like/love/enjoy/prefer"), negative ("I hate/dislike/avoid", "this sucked"),
   commitment ("I'll stick with", "I always use", "I never"), and repeated behavior
   (choosing the same thing multiple times). Do not require explicit "I prefer" language.
+  IMPORTANT — also extract PREFERENCE for:
+  * Personal lifestyle choices and routines (bedtime habits, dietary choices, exercise patterns)
+    even when described procedurally. "User winds down with meditation before 9:30 PM and
+    avoids phone use in the evening" is a PREFERENCE, not just a PROCEDURE.
+  * Viewing/listening/reading habits: genre, platform, format. "User watches Netflix stand-up
+    specials" and "User listens to history podcasts (Hardcore History, Lore)" are PREFERENCES.
+  * Dietary and recipe choices: "User makes coffee creamer with almond milk, vanilla, honey"
+    reveals a PREFERENCE for natural/homemade creamers — extract that, not just the recipe steps.
+  * Avoidances and constraints with conditions: "no phone after 9:30 PM", "avoids crowded venues",
+    "prefers under 45-minute workouts". Capture the constraint, not just the general topic.
+  When a PROCEDURE also reveals a clear personal preference, extract BOTH nodes.
 - BELIEF: an assertion about the world the speaker holds to be true
 - PROCEDURE: a repeatable step-by-step process, workflow, skill, or algorithm the user applies
 - confidence: 0.9+ for explicitly stated facts, 0.7-0.89 for strongly implied, below 0.7 for uncertain
 - Only extract facts that would still be useful in a future unrelated session
 - Skip pleasantries, filler, and transient task details
 - Keep content concise but specific — aim for one clear sentence per node
+- Do NOT generalize away specificity. Preserve: genre names, platform names, brand names,
+  time constraints, frequency constraints, and qualifying conditions.
+  WRONG: "User likes comedy" — RIGHT: "User prefers Netflix stand-up comedy specials with strong storytelling"
+  WRONG: "User enjoys podcasts" — RIGHT: "User prefers history podcasts (Hardcore History, Lore, The Dollop) during commute"
+  WRONG: "User has bedtime habits" — RIGHT: "User avoids phone use after 9:30 PM as part of wind-down routine"
 - Return {"nodes": [], "edges": []} if nothing meaningful to extract"""
 
 _USER_TEMPLATE = """Extract memories from this conversation:

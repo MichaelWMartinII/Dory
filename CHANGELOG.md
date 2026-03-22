@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.7] — 2026-03-22
+
+### Changed
+- Observer `_SYSTEM_PROMPT` significantly expanded PREFERENCE guidance to fix two failure modes
+  seen in LongMemEval `single-session-preference` questions:
+  - **Classification misses**: lifestyle routines, viewing/listening habits, dietary choices, and
+    avoidance constraints were being typed as CONCEPT or PROCEDURE instead of PREFERENCE. Now
+    explicitly enumerated with examples (bedtime routines, Netflix stand-up specials, podcast genres,
+    recipe ingredient choices as preference signals).
+  - **Specificity loss**: nodes were being generalized (e.g. "User likes comedy" instead of
+    "User prefers Netflix stand-up comedy specials with strong storytelling"). Added explicit
+    anti-generalization rule: preserve genre names, platform names, brand names, time/frequency
+    constraints, and qualifying conditions. Three WRONG/RIGHT examples added.
+  - Also added PROCEDURE+PREFERENCE dual-extraction rule: when a procedure clearly reveals a
+    personal preference, extract both node types.
+- Targeted 30-question benchmark on `single-session-preference` subset: **18/30 = 60.0%**
+  (Haiku extract + Haiku answer + Haiku judge). Note: this is a short-run indicative result;
+  a full 500-question Sonnet run is incoming for a clean apples-to-apples comparison
+  against the v0.3.0 baseline of 79.8%.
+
 ## [0.3.6] — 2026-03-22
 
 ### Fixed
