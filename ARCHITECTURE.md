@@ -1,4 +1,6 @@
-# Engram
+# Architecture — Dory
+
+> Originally written under the project name "Engram". Published as `dory-memory`.
 
 *An engram is the physical substrate of a memory in the brain — the actual trace left behind by experience. This project is the engineered equivalent for AI companions.*
 

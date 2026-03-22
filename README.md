@@ -85,7 +85,8 @@ dory query "topic"      # spreading activation from the terminal
 **With auto-extraction** (add a model and Dory extracts memories from conversation turns automatically):
 
 ```python
-mem = DoryMemory(extract_model="qwen3:14b")                 # local via Ollama
+mem = DoryMemory(extract_model="qwen3:8b")                  # local via Ollama (5 GB)
+mem = DoryMemory(extract_model="qwen3:14b")                 # local via Ollama (9 GB, better quality)
 mem = DoryMemory(                                           # Claude
     extract_model="claude-haiku-4-5-20251001",
     extract_backend="anthropic",
@@ -100,6 +101,9 @@ mem = DoryMemory(                                           # GPT / Grok / any c
 # Log turns — extraction happens automatically every N turns
 mem.add_turn("user", "I'm working on AllergyFind today, need to add a menu endpoint")
 mem.add_turn("assistant", "What authentication approach are you using?")
+
+# Note: local extraction (Ollama) runs synchronously and may take 15–60s per batch
+# depending on model size. Cloud backends (Anthropic, OpenAI) are faster.
 
 # Build API-ready messages with prompt caching
 result = mem.build_context("menu endpoint authentication")
@@ -409,10 +413,12 @@ None of these are answerable by cosine similarity alone. They require directed, 
 - [x] Temporal arithmetic prompt — step-by-step date math before answering
 - [x] Count cross-validation — `salient_counts` verified against EVENT nodes, low-confidence flagged
 - [x] Behavioral preference synthesis — `Reflector` synthesizes PREFERENCE nodes from repeated patterns
+- [x] Graph topology demo — `demo_topology.py` showing provenance / evolution queries flat systems can't answer
+- [x] Ollama demo — `demo_ollama.py` fully local two-session memory demo (no API key required)
+- [x] Qwen3 thinking mode fix — `think=False` in Ollama extraction backend cuts extraction time 3x
 
 **In progress (v0.4)**
 - [ ] Preference inference — targeted improvement on single-session-preference (currently 46.7%)
-- [ ] Graph topology demo — `demo_topology.py` showing provenance / evolution queries flat systems can't answer
 - [ ] S-split benchmark — longer sessions (~115K tokens), better test of spreading activation value
 - [ ] Production hardening — concurrent write safety, adversarial memory injection defense
 

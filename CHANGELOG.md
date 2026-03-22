@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.3] — 2026-03-21
+
+### Added
+- `examples/demo_ollama.py` — fully local two-session memory demo using Ollama (no API key required). Auto-detects installed model, uses native Ollama backend.
+
+### Fixed
+- `think=False` added to `ollama.chat()` in `_call_ollama` — disables Qwen3 extended reasoning mode during extraction. Cuts extraction time ~3x (90s → 30s). Also fixes silent extraction failure when using `extract_backend="openai"` pointed at a local Ollama server (90s model response > 60s httpx timeout → 0 memories, no error message).
+
+### Changed
+- README: added `qwen3:8b` (5 GB) alongside `qwen3:14b` as a recommended extraction model
+- README: added note that local Ollama extraction takes 15–60s per batch
+- README: moved graph topology demo and Ollama demo to v0.3 shipped section; removed from v0.4 in-progress
+
+## [0.3.2] — 2026-03-20
+
+### Added
+- `mem.visualize()` interactive graph with spreading activation query mode, edge type coloring, archived/superseded node rendering, and session summary chain
+- `examples/demo_topology.py` — six live graph traversals demonstrating what spreading activation + typed edges can answer that flat/vector search cannot (supersession, chronicle, dependency, semantic path, provenance, belief grounding)
+- Live demo hosted on GitHub Pages
+
+### Changed
+- README: result-first positioning, demo GIF, topology section
+
 ## [0.3.1] — 2026-03-20
 
 ### Changed

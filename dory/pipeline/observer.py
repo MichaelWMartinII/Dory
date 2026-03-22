@@ -105,6 +105,7 @@ def _call_ollama(turns_text: str, model: str, session_date: str = "") -> dict | 
                 {"role": "user", "content": _user_message(turns_text, session_date)},
             ],
             format="json",
+            think=False,
             options={"temperature": 0.1},
         )
         return json.loads(resp["message"]["content"])
@@ -132,7 +133,12 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
         )
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        # Strip <think>...</think> blocks (Qwen3 and similar reasoning models)
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return _extract_json(content) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
