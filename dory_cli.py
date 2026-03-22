@@ -9,9 +9,13 @@ Usage:
   python dory_cli.py list [--type CONCEPT]
   python dory_cli.py show
   python dory_cli.py consolidate
+  python dory_cli.py review-session --from-hook    # called from Claude Code Stop hook
+  python dory_cli.py review-session --file /path/to/session.jsonl
 """
 
 import argparse
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -107,6 +111,152 @@ def cmd_visualize(args, graph: Graph) -> None:
     print(f"Visualization saved to: {output_path}")
 
 
+def _find_latest_claude_session(project_dir: Path | None = None) -> Path | None:
+    """Find the most recently modified Claude Code session JSONL for the given project dir."""
+    cwd = project_dir or Path.cwd()
+    # Claude Code maps project paths to slugs by replacing / with -
+    slug = str(cwd).replace("/", "-").lstrip("-")
+    sessions_dir = Path.home() / ".claude" / "projects" / slug
+    if not sessions_dir.exists():
+        return None
+    jsonl_files = sorted(sessions_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return jsonl_files[0] if jsonl_files else None
+
+
+def _parse_claude_session(transcript_path: Path) -> tuple[list[dict], str]:
+    """
+    Parse a Claude Code session JSONL into (turns, session_date).
+    Extracts only text-type content blocks; skips thinking/tool_use/tool_result.
+    """
+    turns = []
+    session_date = ""
+    with open(transcript_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if obj.get("type") not in ("user", "assistant"):
+                continue
+
+            if not session_date and obj.get("timestamp"):
+                session_date = obj["timestamp"][:10]  # YYYY-MM-DD
+
+            content = obj.get("message", {}).get("content", "")
+            if isinstance(content, str):
+                text = content.strip()
+            elif isinstance(content, list):
+                text = " ".join(
+                    b.get("text", "")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                ).strip()
+            else:
+                continue
+
+            if text:
+                turns.append({"role": obj["type"], "content": text})
+
+    return turns, session_date
+
+
+def _reviewed_sessions_file() -> Path:
+    reviewed_dir = Path.home() / ".dory"
+    reviewed_dir.mkdir(parents=True, exist_ok=True)
+    return reviewed_dir / "reviewed_sessions.txt"
+
+
+def _is_reviewed(session_id: str) -> bool:
+    f = _reviewed_sessions_file()
+    if not f.exists():
+        return False
+    return session_id in f.read_text().splitlines()
+
+
+def _mark_reviewed(session_id: str) -> None:
+    f = _reviewed_sessions_file()
+    with open(f, "a") as fh:
+        fh.write(session_id + "\n")
+
+
+def cmd_review_session(args, graph: Graph) -> None:
+    """
+    Parse a Claude Code session transcript and run it through Observer
+    to extract durable memories into the graph.
+
+    Called from a Claude Code Stop hook (--from-hook reads transcript_path
+    from the hook JSON payload on stdin), or directly with --file.
+    """
+    from dory.pipeline import Observer
+
+    # --- Resolve transcript path ---
+    if args.from_hook:
+        raw = sys.stdin.read().strip()
+        try:
+            hook_data = json.loads(raw)
+            transcript_path = Path(hook_data["transcript_path"])
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"[dory review-session] Could not parse hook stdin: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.file:
+        transcript_path = Path(args.file)
+    else:
+        transcript_path = _find_latest_claude_session()
+        if not transcript_path:
+            print("[dory review-session] No Claude Code session found for current directory.", file=sys.stderr)
+            sys.exit(1)
+
+    if not transcript_path.exists():
+        print(f"[dory review-session] Transcript not found: {transcript_path}", file=sys.stderr)
+        sys.exit(1)
+
+    session_id = transcript_path.stem  # UUID filename without .jsonl
+
+    if not args.force and _is_reviewed(session_id):
+        print(f"[dory review-session] Already reviewed: {session_id}")
+        return
+
+    # --- Parse turns ---
+    turns, session_date = _parse_claude_session(transcript_path)
+    if not turns:
+        print(f"[dory review-session] No text turns found in {transcript_path.name}")
+        return
+
+    print(f"[dory review-session] {len(turns)} turns | session {session_id[:8]}… | date {session_date or 'unknown'}")
+
+    # --- Config from args or env ---
+    backend  = args.backend  or os.getenv("DORY_BACKEND",  "anthropic")
+    model    = args.model    or os.getenv("DORY_MODEL",    "claude-haiku-4-5-20251001")
+    api_key  = args.api_key  or os.getenv("ANTHROPIC_API_KEY", "")
+    base_url = args.base_url or os.getenv("DORY_BASE_URL", "http://localhost:8000")
+
+    obs = Observer(
+        graph=graph,
+        model=model,
+        backend=backend,
+        api_key=api_key,
+        base_url=base_url,
+        threshold=args.threshold,
+    )
+
+    for turn in turns:
+        obs.add_turn(turn["role"], turn["content"])
+
+    stats = obs.flush(session_date=session_date)
+    _mark_reviewed(session_id)
+
+    print(f"[dory review-session] Done:")
+    print(f"  turns logged:    {stats['turns_logged']}")
+    print(f"  extractions run: {stats['extractions_run']}")
+    print(f"  nodes written:   {stats['nodes_written']}")
+    print(f"  nodes skipped:   {stats['nodes_skipped']}")
+    print(f"  errors:          {stats['errors']}")
+
+
 def cmd_consolidate(args, graph: Graph) -> None:
     result = session.end_session(graph)
     print(f"Consolidation complete:")
@@ -165,6 +315,45 @@ def main() -> None:
     # consolidate
     sub.add_parser("consolidate", help="Run end-of-session consolidation")
 
+    # review-session
+    p_review = sub.add_parser(
+        "review-session",
+        help="Extract memories from a Claude Code session transcript",
+    )
+    src = p_review.add_mutually_exclusive_group()
+    src.add_argument(
+        "--from-hook", action="store_true",
+        help="Read transcript_path from Claude Code Stop hook JSON on stdin",
+    )
+    src.add_argument(
+        "--file", default=None, metavar="PATH",
+        help="Path to a Claude Code session .jsonl file",
+    )
+    p_review.add_argument(
+        "--backend", default=None,
+        help="LLM backend: anthropic|ollama|openai (default: $DORY_BACKEND or anthropic)",
+    )
+    p_review.add_argument(
+        "--model", default=None,
+        help="Extraction model (default: $DORY_MODEL or claude-haiku-4-5-20251001)",
+    )
+    p_review.add_argument(
+        "--api-key", default=None, dest="api_key",
+        help="API key (default: $ANTHROPIC_API_KEY)",
+    )
+    p_review.add_argument(
+        "--base-url", default=None, dest="base_url",
+        help="Base URL for openai-compat backend (default: $DORY_BASE_URL)",
+    )
+    p_review.add_argument(
+        "--threshold", type=int, default=10,
+        help="Observer turn threshold for auto-extraction (default: 10)",
+    )
+    p_review.add_argument(
+        "--force", action="store_true",
+        help="Re-process even if this session was already reviewed",
+    )
+
     args = parser.parse_args()
 
     from dory.store import DEFAULT_GRAPH_PATH
@@ -179,6 +368,7 @@ def main() -> None:
         "show": cmd_show,
         "visualize": cmd_visualize,
         "consolidate": cmd_consolidate,
+        "review-session": cmd_review_session,
     }
     dispatch[args.command](args, graph)
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dory-memory"
-version = "0.3.7"
+version = "0.3.8"
 description = "Agent memory that scores 79.8% on LongMemEval (+13pp). Graph-based, local-first, zero server."
 readme = "README.md"
 license = "Apache-2.0"

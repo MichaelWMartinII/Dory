@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.8] — 2026-03-22
+
+### Added
+- `dory review-session` CLI command — reads a Claude Code session `.jsonl` transcript,
+  strips tool calls / thinking blocks, pipes text turns through `Observer`, and writes
+  extracted memories into the graph. Supports three source modes:
+  - `--from-hook`: reads `transcript_path` from Claude Code Stop hook JSON on stdin
+  - `--file PATH`: explicit transcript path
+  - auto-detect: finds most recently modified `.jsonl` for the current project directory
+- Processed sessions tracked in `~/.dory/reviewed_sessions.txt` to prevent double-extraction.
+  Use `--force` to re-process.
+- `benchmarks/evaluate_anthropic.py` (shipped in v0.3.7, added here for clarity) — Anthropic-backed
+  LongMemEval evaluator, drop-in replacement when no OpenAI key is available.
+
+### Changed
+- Claude Code Stop hook now runs `review-session --from-hook` before `consolidate`, so every
+  session is automatically extracted into the memory graph at session end.
+  Config in `~/.claude/settings.json`.
+
 ## [0.3.7] — 2026-03-22
 
 ### Changed
