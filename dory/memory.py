@@ -10,9 +10,6 @@ from .pipeline.prefixer import Prefixer, PrefixResult
 from .pipeline.observer import Observer
 from . import session as _session, consolidation
 
-# Shared executor for running blocking LLM/DB calls from async contexts.
-_executor = ThreadPoolExecutor()
-
 
 class DoryMemory:
     """
@@ -76,12 +73,14 @@ class DoryMemory:
         extract_base_url: str = "http://localhost:11434",
         extract_api_key: str = "local",
         session_id: str | None = None,
+        infer_implicit: bool = False,
     ):
         from .store import DEFAULT_GRAPH_PATH
         path = Path(db_path) if db_path else DEFAULT_GRAPH_PATH
         self._graph = Graph(path=path)
         self._prefixer = Prefixer(self._graph, db_path=path)
         self._observer: Observer | None = None
+        self._executor = ThreadPoolExecutor()
         if extract_model:
             self._observer = Observer(
                 self._graph,
@@ -91,6 +90,7 @@ class DoryMemory:
                 base_url=extract_base_url,
                 api_key=extract_api_key,
                 session_id=session_id,
+                infer_implicit=infer_implicit,
             )
 
     # ------------------------------------------------------------------
@@ -184,17 +184,17 @@ class DoryMemory:
     async def aquery(self, topic: str) -> str:
         """Async version of query()."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(_executor, self.query, topic)
+        return await loop.run_in_executor(self._executor, self.query, topic)
 
     async def abuild_context(self, query: str = "") -> PrefixResult:
         """Async version of build_context()."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(_executor, self.build_context, query)
+        return await loop.run_in_executor(self._executor, self.build_context, query)
 
     async def aadd_turn(self, role: str, content: str) -> None:
         """Async version of add_turn(). Safe to await when Observer makes LLM calls."""
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(_executor, self.add_turn, role, content)
+        await loop.run_in_executor(self._executor, self.add_turn, role, content)
 
     async def aobserve(
         self,
@@ -205,13 +205,13 @@ class DoryMemory:
         """Async version of observe()."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _executor, lambda: self.observe(content, node_type, tags)
+            self._executor, lambda: self.observe(content, node_type, tags)
         )
 
     async def aflush(self) -> dict:
         """Async version of flush(). Awaitable — LLM extraction runs in thread pool."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(_executor, self.flush)
+        return await loop.run_in_executor(self._executor, self.flush)
 
     # ------------------------------------------------------------------
     # Power-user access
@@ -232,6 +232,16 @@ class DoryMemory:
         """
         from .visualize import open_visualization
         return open_visualization(self._graph, output_path=output_path, open_browser=open_browser)
+
+    def close(self) -> None:
+        """Release resources held by this DoryMemory instance."""
+        self._executor.shutdown(wait=False)
+
+    def __enter__(self) -> "DoryMemory":
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
 
     @property
     def graph(self) -> Graph:

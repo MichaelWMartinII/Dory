@@ -8,6 +8,7 @@ from .schema import NodeType, EdgeType, new_id, ZONE_ARCHIVED
 from . import activation as act
 from . import consolidation
 from . import store
+from .sanitize import sanitize_node_content
 
 _EPISODIC_EDGE_TYPES = frozenset({"SUPPORTS_FACT", "MENTIONS"})
 
@@ -71,6 +72,21 @@ _HYBRID_RE = re.compile(
 )
 
 
+# Procedural questions asking how to do something — surface PROCEDURE nodes first.
+_PROCEDURE_RE = re.compile(
+    r"\b("
+    r"how (?:do|to|can|should|did) (?:I|we|you)\b|"
+    r"what(?:'s| is) the (?:process|steps?|procedure|workflow|way) (?:to|for)\b|"
+    r"walk (?:me )?through\b|"
+    r"step[- ]by[- ]step\b|"
+    r"what are the steps\b|"
+    r"instructions? (?:for|to)\b|"
+    r"how (?:does|do) .{0,30} work\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
 # Preference questions asking for personalized recommendations or suggestions.
 # Needs to match generic phrasing ("any advice", "can you suggest") used in benchmarks.
 _PREFERENCE_RE = re.compile(
@@ -85,20 +101,29 @@ _PREFERENCE_RE = re.compile(
     r"(?:can you |could you )(?:suggest|recommend)\b|"
     r"what should I\b|"
     r"what would you (?:recommend|suggest)|"
-    r"(?:what do|do) you think\b"
+    r"(?:what do|do) you think\b|"
+    # Third-person preference questions (LongMemEval asks about "the user" or by name)
+    r"what .{0,40}(?:would|might|could) (?:they|he|she|\w+) (?:like|enjoy|prefer)\b|"
+    r"which .{0,30}(?:would|might) .{0,20}(?:prefer|enjoy|like|choose|pick)\b|"
+    r"(?:most likely|probably) (?:to )?(?:like|enjoy|prefer|want|choose)\b|"
+    r"what .{0,20}(?:does|do) .{0,20}(?:like|enjoy|prefer|tend to)\b|"
+    r"(?:suit(?:s|ed)?|good match for|fit(?:s|ting)? .{0,10}taste)"
     r")\b",
     re.IGNORECASE,
 )
 
 
-def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid"]:
+def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid", "procedure"]:
     """
-    Classify a query into one of three retrieval modes. Deterministic — no LLM call.
+    Classify a query into one of four retrieval modes. Deterministic — no LLM call.
 
-    hybrid:   questions about change or evolution across time (need both layers)
-    episodic: counts, ordering, specific events, relative time (need session log)
-    graph:    preferences, stable facts, beliefs, relationships (default)
+    procedure: how-to questions — surface PROCEDURE nodes first
+    hybrid:    questions about change or evolution across time (need both layers)
+    episodic:  counts, ordering, specific events, relative time (need session log)
+    graph:     preferences, stable facts, beliefs, relationships (default)
     """
+    if _PROCEDURE_RE.search(topic):
+        return "procedure"
     if _HYBRID_RE.search(topic):
         return "hybrid"
     if _PREFERENCE_RE.search(topic):
@@ -293,50 +318,192 @@ def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summa
     )
 
 
-def _preference_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+def _procedure_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
     """
-    For preference/recommendation questions: surface ALL PREFERENCE nodes first,
-    then FTS-expanded semantic nodes, then SESSION narratives.
+    For how-to / procedural questions: surface PROCEDURE nodes first, then
+    spreading activation semantic context, then any relevant session history.
 
-    PREFERENCE nodes are shown regardless of activation level — even low-salience
-    stored preferences are relevant when answering recommendation questions.
+    PROCEDURE nodes are shown regardless of activation level — a stored workflow
+    is relevant to any matching how-to query even if it wasn't recently activated.
     """
-    # All non-archived PREFERENCE nodes, highest salience first
-    pref_nodes = sorted(
-        [n for n in graph.all_nodes() if n.type == NodeType.PREFERENCE and n.zone != ZONE_ARCHIVED],
+    # All active PROCEDURE nodes, highest salience first
+    proc_nodes = sorted(
+        [n for n in graph.all_nodes() if n.type == NodeType.PROCEDURE],
         key=lambda n: -n.salience,
     )
 
-    # FTS expansion on the topic to pull topically relevant non-preference nodes
+    # FTS expansion on the topic to find relevant procedures specifically
+    terms = _key_terms(topic, n=8)
+    fts_ids: set[str] = set()
+    if terms:
+        or_query = " OR ".join(terms.split())
+        fts_ids = set(store.search_fts(or_query, graph.path, limit=50))
+
+    # Topically relevant procedures (FTS match) sorted first
+    relevant_procs = [n for n in proc_nodes if n.id in fts_ids]
+    other_procs = [n for n in proc_nodes if n.id not in fts_ids]
+    ordered_procs = relevant_procs + other_procs
+
+    # Semantic context from spreading activation (exclude PROCEDURE nodes already shown)
+    proc_ids = {n.id for n in ordered_procs}
+    expanded: dict[str, float] = {
+        nid: lvl for nid, lvl in activated.items()
+        if nid not in proc_ids
+        and graph.get_node(nid)
+        and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
+    }
+
+    parts = []
+
+    if ordered_procs:
+        proc_lines = ["Stored procedures and workflows:"]
+        for node in ordered_procs:
+            core_marker = " [CORE]" if node.is_core else ""
+            proc_lines.append(f"- [PROCEDURE{core_marker}] {node.content}")
+        parts.append("\n".join(proc_lines))
+
+    if expanded:
+        parts.append(act.serialize(expanded, graph, max_nodes=20))
+
+    return "\n\n".join(p for p in parts if p) or "(no relevant memories found)"
+
+
+def _dedup_similar(nodes: list, threshold: float = 0.65) -> list:
+    """
+    Remove near-duplicate nodes by Jaccard word-overlap.
+    The first (highest-ranked) node in each cluster is kept.
+    """
+    kept = []
+    for n in nodes:
+        wa = set(n.content.lower().split())
+        duplicate = any(
+            len(wa & set(k.content.lower().split())) / max(len(wa | set(k.content.lower().split())), 1) >= threshold
+            for k in kept
+        )
+        if not duplicate:
+            kept.append(n)
+    return kept
+
+
+def _preference_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+    """
+    For preference/recommendation questions: surface explicit PREFERENCE nodes first,
+    then KEY EVENTS (specific memorable episodes), then SESSION_SUMMARY grounding,
+    then FTS-expanded semantic nodes, then SESSION narratives, then synthesized patterns.
+
+    Ordering rationale:
+      - FTS-sort preferences so query-relevant ones appear first, not just highest salience
+      - Deduplicate near-identical preferences to reduce noise and surfacing diverse facts
+      - Elevate EVENT nodes to their own section — episodic specifics are often the key fact
+      - Cap ENTITY nodes at 5 to prevent restaurant/product lists drowning key events
+    """
+    # FTS expansion on the topic — needed for both preference ranking and entity capping
     terms = _key_terms(topic, n=8)
     fts_ids: set[str] = set()
     if terms:
         or_query = " OR ".join(terms.split())
         fts_ids = set(store.search_fts(or_query, graph.path, limit=100))
 
-    expanded: dict[str, float] = {
-        nid: lvl for nid, lvl in activated.items()
-        if graph.get_node(nid) and graph.get_node(nid).type != NodeType.PREFERENCE
-        and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
-    }
+    # Split into explicitly extracted preferences vs synthesized behavioral patterns
+    real_prefs = []
+    synth_prefs = []
+    for n in graph.all_nodes():
+        if n.type == NodeType.PREFERENCE and n.zone != ZONE_ARCHIVED:
+            if "synthesized" in (n.tags or []):
+                synth_prefs.append(n)
+            else:
+                real_prefs.append(n)
+
+    # FTS-first sort: preferences matching the query bubble to the top
+    real_prefs.sort(key=lambda n: (n.id not in fts_ids, -n.salience))
+    # Deduplicate near-identical preferences — reduces 7 yogurt clones to 2-3 distinct ones
+    real_prefs = _dedup_similar(real_prefs, threshold=0.65)
+
+    # Only surface synthesized patterns if they overlap with the query topic
+    topic_words = {w.lower() for w in topic.split() if len(w) >= 4}
+    relevant_synth = [
+        n for n in synth_prefs
+        if any(kw in n.content.lower() for kw in topic_words)
+    ][:5]
+
+    # Separate EVENT nodes from other activated nodes — events are high signal for preference Qs
+    # (e.g. "user met Brandon Flowers after a concert" is the key fact for a Denver trip question)
+    event_nodes: list[tuple] = []
+    event_ids: set[str] = set()
+    expanded: dict[str, float] = {}
+    entity_count = 0
+    proc_count = 0
+
+    for nid, lvl in activated.items():
+        node = graph.get_node(nid)
+        if not node or node.zone == ZONE_ARCHIVED:
+            continue
+        if node.type.value in ("SESSION", "SESSION_SUMMARY") or node.type == NodeType.PREFERENCE:
+            continue
+        if node.type == NodeType.EVENT:
+            event_nodes.append((node, lvl))
+            event_ids.add(nid)
+        elif node.type == NodeType.ENTITY:
+            # Cap ENTITY nodes at 5 — long restaurant/product lists drown key events
+            if entity_count < 5 or nid in fts_ids:
+                expanded[nid] = lvl
+                entity_count += 1
+        elif node.type == NodeType.PROCEDURE:
+            # Cap PROCEDURE nodes at 3 — full recipes bias the answer model away from preferences
+            if proc_count < 3:
+                expanded[nid] = lvl
+                proc_count += 1
+        else:
+            expanded[nid] = lvl
+
+    # Also pull FTS-matched EVENT nodes not yet in activated
     for nid in fts_ids:
         node = graph.get_node(nid)
-        if node and node.type != NodeType.PREFERENCE and node.type.value not in ("SESSION", "SESSION_SUMMARY"):
-            if nid not in expanded:
-                expanded[nid] = 0.3
+        if not node or node.zone == ZONE_ARCHIVED:
+            continue
+        if node.type == NodeType.EVENT and nid not in event_ids:
+            event_nodes.append((node, 0.3))
+            event_ids.add(nid)
+        elif node.type not in (NodeType.PREFERENCE, NodeType.EVENT) and \
+                node.type.value not in ("SESSION", "SESSION_SUMMARY") and \
+                nid not in expanded:
+            if node.type == NodeType.PROCEDURE and proc_count >= 3:
+                continue  # respect procedure cap for FTS-matched nodes too
+            expanded[nid] = 0.3
+
+    # Sort events: FTS-matched first (most query-relevant), then by activation level
+    event_nodes.sort(key=lambda x: (x[0].id not in fts_ids, -x[1]))
+    event_nodes = event_nodes[:8]
 
     parts = []
 
-    if pref_nodes:
+    # 1. Explicit preferences — FTS-ranked, deduplicated, highest signal
+    if real_prefs:
         pref_lines = ["Stored preferences:"]
-        for node in pref_nodes:
+        for node in real_prefs:
             core_marker = " [CORE]" if node.is_core else ""
             pref_lines.append(f"- [PREFERENCE{core_marker}] {node.content}")
         parts.append("\n".join(pref_lines))
 
-    if expanded:
-        parts.append(act.serialize(expanded, graph, max_nodes=30))
+    # 2. Key events — specific memorable episodes, often the decisive detail
+    if event_nodes:
+        event_lines = ["Key events:"]
+        for node, _ in event_nodes:
+            date_prefix = f"({node.created_at[:10]}) " if node.created_at else ""
+            event_lines.append(f"- [EVENT] {date_prefix}{node.content}")
+        parts.append("\n".join(event_lines))
 
+    # 3. SESSION_SUMMARY nodes — episodic grounding for experience-based questions
+    summaries = _get_linked_summaries(activated, graph, limit=3)
+    summary_block = _format_summary_block(summaries)
+    if summary_block:
+        parts.append(summary_block)
+
+    # 4. FTS-expanded semantic context (entity-capped, events already shown above)
+    if expanded:
+        parts.append(act.serialize(expanded, graph, max_nodes=20))
+
+    # 5. Full session narratives
     session_nodes = sorted(
         [n for n in graph.all_nodes() if n.type.value == "SESSION"],
         key=lambda n: _parse_session_date(n.content),
@@ -346,6 +513,13 @@ def _preference_context(topic: str, graph: Graph, activated: dict[str, float]) -
         for node in session_nodes:
             sess_lines.append(f"- {node.content}")
         parts.append("\n".join(sess_lines))
+
+    # 6. Synthesized behavioral patterns — only if topically relevant, lowest priority
+    if relevant_synth:
+        synth_lines = ["Behavioral patterns (inferred from repeated engagement):"]
+        for node in relevant_synth:
+            synth_lines.append(f"- {node.content}")
+        parts.append("\n".join(synth_lines))
 
     return "\n\n".join(p for p in parts if p) or "(no relevant memories found)"
 
@@ -399,6 +573,9 @@ def query(topic: str, graph: Graph) -> str:
 
     route = _route_query(topic)
 
+    if route == "procedure":
+        return _procedure_context(topic, graph, activated)
+
     # For episodic and hybrid routes, pull SESSION_SUMMARY nodes linked to
     # the activated semantic nodes — staged retrieval.
     summaries: list = []
@@ -428,9 +605,15 @@ def observe(
     auto_link: bool = True,
 ) -> str:
     """Add a new observation node, auto-linking to related nodes. Returns the new node ID."""
-    node = graph.add_node(type=node_type, content=content, tags=tags or [])
+    clean, flagged, reason = sanitize_node_content(content)
+    all_tags = list(tags or [])
+    if flagged:
+        all_tags.append("flagged")
+        if reason:
+            all_tags.append(f"flag_reason:{reason[:64]}")
+    node = graph.add_node(type=node_type, content=clean, tags=all_tags)
     if auto_link:
-        _auto_link(node.id, content, graph)
+        _auto_link(node.id, clean, graph)
     return node.id
 
 

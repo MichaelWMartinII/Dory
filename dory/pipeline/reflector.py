@@ -35,13 +35,23 @@ from ..schema import Node, NodeType, EdgeType, ZONE_ACTIVE, ZONE_ARCHIVED, now_i
 from .. import store
 
 _PREF_STOPWORDS = frozenset({
+    # Articles / pronouns / conjunctions
     "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
     "had", "do", "does", "did", "will", "would", "should", "may", "might",
     "can", "could", "to", "of", "in", "on", "at", "for", "with", "by", "from",
     "as", "and", "or", "but", "not", "this", "that", "it", "its", "also",
     "more", "than", "just", "very", "all", "any", "one", "two", "get", "user",
-    "users", "prefers", "prefer", "likes", "like", "enjoys", "enjoy",
-    "use", "uses", "used", "using", "new", "add", "adds", "added", "i",
+    "users", "i", "my", "me", "their", "they", "them", "when", "where", "what",
+    # Preference verbs (the synthesis is about the subject, not the verb)
+    "prefers", "prefer", "likes", "like", "enjoys", "enjoy", "avoids", "avoid",
+    "wants", "want", "needs", "need", "uses", "use", "used", "using",
+    # Generic modifiers that appear across many preferences without being subjects
+    "better", "best", "good", "great", "faster", "fast", "slow", "high", "low",
+    "strong", "weak", "easy", "hard", "simple", "complex", "over", "instead",
+    "rather", "makes", "make", "allows", "allow", "works", "work", "runs", "run",
+    # Common action words
+    "add", "adds", "added", "new", "build", "built", "write", "written",
+    "switch", "switched", "move", "moved", "keep", "kept", "stay", "stick",
 })
 
 
@@ -127,33 +137,38 @@ class Reflector:
     # ------------------------------------------------------------------
 
     def run(self) -> dict:
-        stats = {
+        stats: dict = {
             "duplicates_merged": 0,
             "supersessions_applied": 0,
             "observations_compressed": 0,
             "behavioral_preferences_synthesized": 0,
             "errors": 0,
+            "error_details": [],
         }
 
         try:
             stats["duplicates_merged"] = self._merge_duplicates()
         except Exception as e:
             stats["errors"] += 1
+            stats["error_details"].append(f"merge_duplicates: {e}")
 
         try:
             stats["supersessions_applied"] = self._apply_supersessions()
         except Exception as e:
             stats["errors"] += 1
+            stats["error_details"].append(f"apply_supersessions: {e}")
 
         try:
             stats["observations_compressed"] = self._compress_observations()
         except Exception as e:
             stats["errors"] += 1
+            stats["error_details"].append(f"compress_observations: {e}")
 
         try:
             stats["behavioral_preferences_synthesized"] = self._synthesize_behavioral_preferences()
         except Exception as e:
             stats["errors"] += 1
+            stats["error_details"].append(f"synthesize_behavioral_preferences: {e}")
 
         self.graph._recompute_salience()
         self.graph.save()
@@ -273,33 +288,35 @@ class Reflector:
 
     def _synthesize_behavioral_preferences(self) -> int:
         """
-        Detect latent preferences inferred from repeated behavior across sessions,
-        not just explicitly stated preferences.
+        Detect latent preferences reinforced by repeated explicit preference statements
+        across sessions.
 
         Algorithm:
-          1. Extract all PREFERENCE and CONCEPT nodes.
-          2. For each node, compute its "subject keywords" (content minus stopwords).
-          3. Build an inverted index: keyword → list of nodes.
-          4. For any keyword appearing in 3+ nodes whose creation dates span at least
-             2 distinct calendar days (proxy for different sessions), synthesize a new
-             PREFERENCE node: "User consistently engages with X (observed N sessions)"
-          5. Mark it is_core=True, link with CO_OCCURS edges to source nodes.
-          6. Skip if a SUPERSEDES edge from a synthetic node for this keyword already
-             exists (avoid double-synthesis across repeated Reflector runs).
+          1. Extract only PREFERENCE nodes (not CONCEPT — concept mentions are topic
+             engagement, not stated preferences, and produce keyword noise).
+          2. For each node, compute subject keywords (content minus stopwords).
+          3. Build an inverted index: keyword → list of PREFERENCE nodes.
+          4. For any keyword appearing in 4+ PREFERENCE nodes spanning at least
+             3 distinct calendar days, synthesize a meta-preference node.
+          5. Do NOT auto-promote to is_core — let normal salience promotion handle it.
+          6. Skip already-synthesized keywords (deduplicated across Reflector runs).
 
         No LLM calls — pure graph aggregation.
         """
         from collections import defaultdict
 
-        target_types = {NodeType.PREFERENCE, NodeType.CONCEPT}
-        nodes = [n for n in self.graph.all_nodes(zone=ZONE_ACTIVE) if n.type in target_types]
+        # PREFERENCE-only: CONCEPT nodes generate topic noise, not preference signal
+        nodes = [n for n in self.graph.all_nodes(zone=ZONE_ACTIVE) if n.type == NodeType.PREFERENCE]
 
-        if len(nodes) < 3:
+        if len(nodes) < 4:
             return 0
 
-        # Build inverted index: subject_keyword → [node, ...]
+        # Build inverted index: subject_keyword → [PREFERENCE node, ...]
         keyword_index: dict[str, list[Node]] = defaultdict(list)
         for node in nodes:
+            # Skip already-synthesized nodes as sources to avoid compounding artifacts
+            if "synthesized" in (node.tags or []):
+                continue
             words = {
                 w for w in node.content.lower().split()
                 if len(w) >= 4 and w not in _PREF_STOPWORDS
@@ -315,29 +332,29 @@ class Reflector:
 
         synthesized = 0
         for keyword, cluster in keyword_index.items():
-            if len(cluster) < 3:
+            # Require 4+ source preferences (up from 3) to reduce false positives
+            if len(cluster) < 4:
                 continue
             if keyword in existing_synthetic:
                 continue
 
-            # Check that nodes span at least 2 distinct calendar days
+            # Require 3+ distinct dates (up from 2) — must span multiple sessions
             dates = {n.created_at[:10] for n in cluster if n.created_at}
-            if len(dates) < 2:
+            if len(dates) < 3:
                 continue
 
             n_sessions = len(dates)
             content = (
-                f"User consistently engages with '{keyword}' "
-                f"(observed across {n_sessions} sessions)"
+                f"User shows repeated preference for '{keyword}' "
+                f"(reinforced across {n_sessions} sessions)"
             )
 
-            # Create the synthetic PREFERENCE node
+            # Create the synthetic PREFERENCE node — NOT is_core, earn it via salience
             new_node = self.graph.add_node(
                 type=NodeType.PREFERENCE,
                 content=content,
                 tags=["synthesized", keyword],
             )
-            new_node.is_core = True
             new_node.metadata["synthesized_from_keyword"] = keyword
             new_node.metadata["source_node_ids"] = [n.id for n in cluster]
 
@@ -372,7 +389,6 @@ class Reflector:
                ORDER BY created_at ASC""",
             (cutoff_iso,),
         ).fetchall()
-        conn.close()
 
         if not rows:
             return 0
@@ -391,7 +407,6 @@ class Reflector:
         # Write compressed entry
         comp_id = new_id()
         session_id = raw_obs[0].get("session_id")
-        conn = store._connect(self.db_path)
         conn.execute(
             """INSERT OR IGNORE INTO compressed_obs
                (id, session_id, content, created_at, source_ids)
@@ -404,7 +419,6 @@ class Reflector:
             source_ids,
         )
         conn.commit()
-        conn.close()
         return len(source_ids)
 
     def _summarize(self, turns_text: str) -> str | None:

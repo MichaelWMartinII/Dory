@@ -133,6 +133,9 @@ Treat the memory context below as your actual prior conversations with this pers
 Instructions:
 - Search the context for any relevant preferences, interests, past experiences, or personality details
   that apply to this question — even if the exact topic was never explicitly discussed before.
+- If the context contains a "Key events" section, prioritize those specific memories — they capture
+  memorable moments and specific details (named things, achievements, encounters) that should be
+  directly referenced and built upon in your answer.
 - Apply what you know about this person to give a tailored, personalized answer.
 - Do NOT say "this was never discussed" or "I don't have memory" unless the context has absolutely
   nothing relevant. If you have partial context, use it.
@@ -195,6 +198,114 @@ def _answer_openai(question: str, context: str, model: str, base_url: str, api_k
     return resp.choices[0].message.content.strip()
 
 
+def _answer_claude_code(question: str, context: str, question_type: str = "", question_date: str = "") -> str:
+    """
+    Use `claude -p --bare` with Dory context injected as full prompt.
+    Approach A: same context as other backends, but answered by the Claude Code CLI.
+    """
+    import subprocess
+    full_prompt = _get_prompt(question, context, question_type, question_date)
+    result = subprocess.run(
+        ["claude", "-p", "--output-format", "text", "--bare", full_prompt],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"claude -p failed (exit {result.returncode}): {result.stderr[:500]}"
+        )
+    return result.stdout.strip()
+
+
+_MCP_TYPE_HINTS = {
+    "temporal-reasoning": (
+        "This question is about timing or ordering of events. "
+        "Use date prefixes in memories to calculate exact differences."
+    ),
+    "multi-session": (
+        "This question may require info from multiple conversations. "
+        "Search broadly and count every relevant instance."
+    ),
+    "knowledge-update": (
+        "Use the most recent information — prefer updated values over originals."
+    ),
+    "single-session-user": (
+        "The answer is likely in a specific session memory. Look for exact names, numbers, or items."
+    ),
+    "single-session-assistant": (
+        "The answer is something the assistant said. Look in session memories for specific details."
+    ),
+    "single-session-preference": (
+        "Answer based on stored preferences, interests, and past experiences. "
+        "Be personalized and reference specific memories."
+    ),
+}
+
+
+def _answer_claude_code_mcp(
+    question: str,
+    db_path: "Path",
+    question_type: str = "",
+    question_date: str = "",
+) -> str:
+    """
+    Use `claude -p --strict-mcp-config` so Claude Code queries Dory autonomously.
+    Approach B: the authentic test — Claude uses dory_query to retrieve its own memories.
+    """
+    import json
+    import subprocess
+    import tempfile
+
+    dory_mcp_script = str(Path(__file__).parent.parent / "dory_mcp.py")
+    mcp_config = {
+        "mcpServers": {
+            "dory": {
+                "command": sys.executable,
+                "args": [dory_mcp_script, "--db", str(db_path)],
+            }
+        }
+    }
+
+    type_hint = _MCP_TYPE_HINTS.get(question_type, "")
+    date_hint = f" Today's date is {question_date}." if question_date else ""
+
+    system_prompt = (
+        "You have access to a Dory memory graph containing someone's conversation history. "
+        "Call dory_query with relevant search terms to retrieve memories, then answer "
+        f"the question based on what you find. {type_hint}{date_hint} "
+        "Give a short, direct answer."
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(mcp_config, f)
+        mcp_config_path = f.name
+
+    try:
+        result = subprocess.run(
+            [
+                "claude", "-p",
+                "--output-format", "text",
+                "--bare",
+                "--dangerously-skip-permissions",
+                "--strict-mcp-config",
+                "--mcp-config", mcp_config_path,
+                "--system-prompt", system_prompt,
+                question,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"claude -p failed (exit {result.returncode}): {result.stderr[:500]}"
+            )
+        return result.stdout.strip()
+    finally:
+        Path(mcp_config_path).unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------------------
 # Dataset loading
 # ---------------------------------------------------------------------------
@@ -226,6 +337,7 @@ def run_item(
     use_dory: bool = True,
     no_session_summary: bool = False,
     no_session_node: bool = False,
+    answer_backend: str | None = None,
 ) -> dict:
     """
     Process one LongMemEval item.
@@ -360,6 +472,24 @@ def run_item(
                 session_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION")
                 summary_nodes = sum(1 for n in g.all_nodes() if n.type.value == "SESSION_SUMMARY")
                 print(f"    [{question_id}] {len(g.all_nodes())} nodes ({session_nodes} sessions, {summary_nodes} summaries)")
+
+            # MCP mode: answer while DB still exists (temp dir about to be cleaned up)
+            ans_be = answer_backend or backend
+            if ans_be == "claude-code-mcp":
+                try:
+                    mcp_answer = _answer_claude_code_mcp(
+                        question, db_path, question_type, question_date_str
+                    )
+                except Exception as e:
+                    err = str(e).lower()
+                    if "credit" in err or "billing" in err or "insufficient" in err or "balance" in err:
+                        raise
+                    mcp_answer = f"ERROR: {e}"
+                return {
+                    "question_id": question_id,
+                    "hypothesis": mcp_answer,
+                    "_context_length": len(context),
+                }
     else:
         # Baseline: raw conversation as context (no extraction, one API call)
         context = "Conversation history:\n" + "\n".join(
@@ -369,11 +499,15 @@ def run_item(
         if verbose:
             print(f"    [{question_id}] raw context ({len(context)} chars)")
 
+    ans_be = answer_backend or backend
+
     # Generate answer — re-raise credit/auth errors so the caller can abort
     try:
-        if backend == "ollama":
+        if ans_be == "claude-code":
+            answer = _answer_claude_code(question, context, question_type, question_date_str)
+        elif ans_be == "ollama":
             answer = _answer_ollama(question, context, answer_model, question_type, question_date_str)
-        elif backend == "anthropic":
+        elif ans_be == "anthropic":
             answer = _answer_anthropic(question, context, answer_model, api_key, question_type, question_date_str)
         else:
             answer = _answer_openai(question, context, answer_model, base_url, api_key, question_type, question_date_str)
@@ -410,7 +544,15 @@ def main() -> None:
                         help="Model for answer generation (default: qwen3:14b)")
     parser.add_argument("--backend", default="ollama",
                         choices=["ollama", "anthropic", "openai"],
-                        help="LLM backend (default: ollama)")
+                        help="LLM backend for extraction (default: ollama)")
+    parser.add_argument("--answer-backend", default=None,
+                        choices=["ollama", "anthropic", "openai", "claude-code", "claude-code-mcp"],
+                        help=(
+                            "Override backend for answer generation only. "
+                            "claude-code: inject Dory context, answer via `claude -p`. "
+                            "claude-code-mcp: Claude Code calls dory_query autonomously. "
+                            "Defaults to --backend if not set."
+                        ))
     parser.add_argument("--base-url", default="http://localhost:11434",
                         help="Base URL for OpenAI-compat backend")
     parser.add_argument("--api-key", default="local",
@@ -505,6 +647,7 @@ def main() -> None:
                     verbose=args.verbose,
                     no_session_summary=args.no_session_summary,
                     no_session_node=args.no_session_node,
+                    answer_backend=args.answer_backend,
                 )
             except Exception as e:
                 err = str(e).lower()

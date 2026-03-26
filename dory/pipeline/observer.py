@@ -26,6 +26,7 @@ from typing import Any
 from ..graph import Graph
 from ..schema import NodeType, EdgeType, new_id, now_iso
 from .. import store, session as _session
+from ..sanitize import sanitize_node_content
 
 # ---------------------------------------------------------------------------
 # Extraction prompt
@@ -99,6 +100,39 @@ _USER_TEMPLATE_WITH_DATE = """Session date: {session_date}
 Extract memories from this conversation:
 
 {turns}"""
+
+
+# ---------------------------------------------------------------------------
+# Implicit preference inference prompt
+# ---------------------------------------------------------------------------
+
+_IMPLICIT_PREF_SYSTEM = """You are inferring IMPLICIT preferences — things someone values or prefers that were NEVER explicitly stated.
+
+Given a list of facts (events, entities, concepts) extracted from a conversation, identify preferences implied by patterns or choices described, even if the person never said "I prefer" or "I like."
+
+Examples of valid inferences:
+- Multiple cooking events → "Prefers home cooking over eating out"
+- Repeated 5am workout mentions → "Prefers early morning exercise"
+- Jazz chosen in two different contexts → "Prefers jazz music"
+- Evening meditation described as routine → "Prefers evening wind-down with meditation"
+
+Return ONLY valid JSON:
+{
+  "inferred_preferences": [
+    {
+      "content": "concise preference statement (e.g. 'Prefers X over Y' or 'Values X')",
+      "confidence": 0.75,
+      "basis": "one sentence: what behavior implies this"
+    }
+  ]
+}
+
+Rules:
+- Only infer from CLEAR behavioral patterns, NOT single mentions
+- Confidence 0.9+ only when the implication is near-certain
+- 0.7–0.89 for strong but not certain implications
+- Do NOT re-infer preferences that were already explicitly extracted
+- Return {"inferred_preferences": []} if nothing clear to infer"""
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +266,7 @@ class Observer:
         threshold: int = 5,
         confidence_floor: float = 0.7,
         session_id: str | None = None,
+        infer_implicit: bool = False,
     ):
         self.graph = graph
         self.db_path = db_path or graph.path
@@ -242,9 +277,10 @@ class Observer:
         self.threshold = threshold
         self.confidence_floor = confidence_floor
         self.session_id = session_id or new_id()
+        self.infer_implicit = infer_implicit
 
         self._buffer: list[dict] = []
-        self._stats = {"turns_logged": 0, "extractions_run": 0, "nodes_written": 0, "nodes_skipped": 0, "errors": 0}
+        self._stats = {"turns_logged": 0, "extractions_run": 0, "nodes_written": 0, "nodes_skipped": 0, "implicit_inferred": 0, "errors": 0}
 
     # ------------------------------------------------------------------
     # Public API
@@ -305,6 +341,13 @@ class Observer:
 
         self._write(raw)
 
+        # Optional second pass: infer implicit preferences from extracted events/concepts
+        if self.infer_implicit and raw.get("nodes"):
+            implicit = self._infer_implicit_preferences(raw["nodes"])
+            if implicit:
+                self._write({"nodes": implicit, "edges": []})
+                self._stats["implicit_inferred"] += len(implicit)
+
     def _call_llm(self, turns_text: str, session_date: str = "") -> dict | None:
         if self.backend == "ollama":
             return _call_ollama(turns_text, self.model, session_date=session_date)
@@ -324,9 +367,12 @@ class Observer:
 
         for nd in nodes_data:
             confidence = float(nd.get("confidence", 0.0))
-            content = (nd.get("content") or "").strip()
-            if not content:
+            raw_content = (nd.get("content") or "").strip()
+            if not raw_content:
                 continue
+
+            # Sanitize before confidence check so truncation/flags are always applied
+            content, flagged, flag_reason = sanitize_node_content(raw_content)
 
             if confidence < self.confidence_floor:
                 self._stats["nodes_skipped"] += 1
@@ -346,6 +392,10 @@ class Observer:
                 node_type = NodeType.CONCEPT
 
             tags = [t for t in (nd.get("tags") or []) if isinstance(t, str)]
+            if flagged:
+                tags.append("flagged")
+                if flag_reason:
+                    tags.append(f"flag_reason:{flag_reason[:64]}")
 
             # Avoid duplicating very similar content (simple dedup)
             existing = self._find_similar(content)
@@ -378,20 +428,129 @@ class Observer:
             weight = float(ed.get("weight", 0.8))
             self.graph.add_edge(src_id, tgt_id, edge_type, weight=weight)
 
+    def _infer_implicit_preferences(self, extracted_nodes: list[dict]) -> list[dict]:
+        """
+        Second-pass inference: given nodes extracted from this batch, ask the LLM
+        to identify any preferences implied by behaviors/choices that weren't
+        explicitly stated as preferences.
+
+        Only runs if infer_implicit=True. Returns node dicts ready for _write().
+        """
+        # Only reason over events/concepts/entities with sufficient confidence
+        source_nodes = [
+            n for n in extracted_nodes
+            if n.get("type", "").upper() in ("EVENT", "CONCEPT", "ENTITY")
+            and float(n.get("confidence", 0)) >= 0.7
+        ]
+        if len(source_nodes) < 2:
+            return []
+
+        facts = "\n".join(f"- [{n['type'].upper()}] {n['content']}" for n in source_nodes)
+
+        raw: dict | None = None
+        try:
+            if self.backend == "ollama":
+                import ollama
+                resp = ollama.chat(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": _IMPLICIT_PREF_SYSTEM},
+                        {"role": "user", "content": f"Facts:\n{facts}"},
+                    ],
+                    format="json",
+                    think=False,
+                    options={"temperature": 0.1},
+                )
+                raw = json.loads(resp["message"]["content"])
+            elif self.backend == "anthropic":
+                import anthropic
+                client = anthropic.Anthropic(api_key=self.api_key)
+                resp = client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    system=_IMPLICIT_PREF_SYSTEM,
+                    messages=[{"role": "user", "content": f"Facts:\n{facts}"}],
+                )
+                raw = json.loads(resp.content[0].text)
+            elif self.backend == "openai":
+                import httpx
+                r = httpx.post(
+                    f"{self.base_url.rstrip('/')}/v1/chat/completions",
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": _IMPLICIT_PREF_SYSTEM},
+                            {"role": "user", "content": f"Facts:\n{facts}"},
+                        ],
+                        "temperature": 0.1,
+                        "response_format": {"type": "json_object"},
+                    },
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=60,
+                )
+                r.raise_for_status()
+                content = r.json()["choices"][0]["message"]["content"]
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                raw = json.loads(content)
+        except Exception:
+            return []
+
+        if not raw:
+            return []
+
+        inferred = raw.get("inferred_preferences", [])
+        return [
+            {
+                "type": "PREFERENCE",
+                "content": p.get("content", "").strip(),
+                "tags": ["inferred"],
+                "confidence": float(p.get("confidence", 0.7)),
+            }
+            for p in inferred
+            if p.get("content", "").strip() and float(p.get("confidence", 0)) >= 0.7
+        ]
+
     def _find_similar(self, content: str, threshold: float = 0.85):
         """
         Fuzzy dedup: return an existing node if its content is very similar
-        to the new content. Uses character-level overlap (no ML needed).
+        to the new content.
+
+        Uses FTS to get a small candidate set first (fast path), then computes
+        Jaccard similarity only on those candidates. Falls back to an in-memory
+        scan when FTS returns no results — covers nodes added in the current
+        extraction batch that haven't been flushed to SQLite yet.
         """
-        content_lower = content.lower()
-        for node in self.graph.all_nodes():
-            existing_lower = node.content.lower()
-            # Jaccard similarity on word sets
-            a = set(content_lower.split())
-            b = set(existing_lower.split())
-            if not a or not b:
+        from .. import store
+        from ..activation import _fts_query
+
+        a = set(content.lower().split())
+        if not a:
+            return None
+
+        fts_q = _fts_query(content, n=8)
+        candidate_ids = store.search_fts(fts_q, self.db_path, limit=20) if fts_q else []
+
+        # Fast path: check FTS candidates
+        for node_id in candidate_ids:
+            node = self.graph.get_node(node_id)
+            if not node:
                 continue
-            jaccard = len(a & b) / len(a | b)
-            if jaccard >= threshold:
+            b = set(node.content.lower().split())
+            if not b:
+                continue
+            if len(a & b) / len(a | b) >= threshold:
                 return node
+
+        # Fallback: in-memory scan for nodes not yet flushed to SQLite
+        # (e.g. nodes written in the current extraction batch)
+        indexed = set(candidate_ids)
+        for node in self.graph.all_nodes():
+            if node.id in indexed:
+                continue  # already checked above
+            b = set(node.content.lower().split())
+            if not b:
+                continue
+            if len(a & b) / len(a | b) >= threshold:
+                return node
+
         return None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +26,7 @@ class Graph:
         self._nodes: dict[str, Node] = {}
         self._edges: dict[str, Edge] = {}
         self._dirty: bool = False
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
@@ -34,16 +36,17 @@ class Graph:
         self._dirty = False
 
     def save(self) -> None:
-        if self._dirty:
-            self._recompute_salience()
-            self._dirty = False
-        store.save(
-            {
-                "nodes": [n.to_dict() for n in self._nodes.values()],
-                "edges": [e.to_dict() for e in self._edges.values()],
-            },
-            self.path,
-        )
+        with self._lock:
+            if self._dirty:
+                self._recompute_salience()
+                self._dirty = False
+            store.save(
+                {
+                    "nodes": [n.to_dict() for n in self._nodes.values()],
+                    "edges": [e.to_dict() for e in self._edges.values()],
+                },
+                self.path,
+            )
 
     # --- Nodes ---
 
@@ -53,18 +56,19 @@ class Graph:
         content: str,
         tags: list[str] | None = None,
     ) -> Node:
-        now = now_iso()
-        node = Node(
-            id=new_id(),
-            type=type,
-            content=content,
-            created_at=now,
-            last_activated=now,
-            tags=tags or [],
-        )
-        self._nodes[node.id] = node
-        self._dirty = True
-        return node
+        with self._lock:
+            now = now_iso()
+            node = Node(
+                id=new_id(),
+                type=type,
+                content=content,
+                created_at=now,
+                last_activated=now,
+                tags=tags or [],
+            )
+            self._nodes[node.id] = node
+            self._dirty = True
+            return node
 
     def get_node(self, node_id: str) -> Node | None:
         return self._nodes.get(node_id)
@@ -100,33 +104,34 @@ class Graph:
         weight: float = 0.8,
         decay_rate: float = 0.02,
     ) -> Edge:
-        # Reinforce if this typed edge already exists between these nodes
-        for edge in self._edges.values():
-            if (
-                edge.source_id == source_id
-                and edge.target_id == target_id
-                and edge.type == type
-            ):
-                edge.weight = min(1.0, edge.weight + 0.1)
-                edge.activation_count += 1
-                edge.last_activated = now_iso()
-                self._dirty = True
-                return edge
+        with self._lock:
+            # Reinforce if this typed edge already exists between these nodes
+            for edge in self._edges.values():
+                if (
+                    edge.source_id == source_id
+                    and edge.target_id == target_id
+                    and edge.type == type
+                ):
+                    edge.weight = min(1.0, edge.weight + 0.1)
+                    edge.activation_count += 1
+                    edge.last_activated = now_iso()
+                    self._dirty = True
+                    return edge
 
-        now = now_iso()
-        edge = Edge(
-            id=new_id(),
-            source_id=source_id,
-            target_id=target_id,
-            type=type,
-            weight=weight,
-            created_at=now,
-            last_activated=now,
-            decay_rate=decay_rate,
-        )
-        self._edges[edge.id] = edge
-        self._dirty = True
-        return edge
+            now = now_iso()
+            edge = Edge(
+                id=new_id(),
+                source_id=source_id,
+                target_id=target_id,
+                type=type,
+                weight=weight,
+                created_at=now,
+                last_activated=now,
+                decay_rate=decay_rate,
+            )
+            self._edges[edge.id] = edge
+            self._dirty = True
+            return edge
 
     def edges_for_node(self, node_id: str) -> list[Edge]:
         return [
@@ -145,6 +150,7 @@ class Graph:
         beta: float = 0.4,
         gamma: float = 0.3,
     ) -> None:
+        # Called from save() which already holds _lock — no re-acquire needed (RLock is reentrant).
         if not self._nodes:
             return
 

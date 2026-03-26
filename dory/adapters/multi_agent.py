@@ -134,20 +134,28 @@ class SharedMemoryPool:
         that agent OR nodes with no agent tag (shared pool entries).
         Otherwise returns the full cross-agent context.
         """
-        context = _session.query(topic, self._graph)
-        if agent_id:
-            tag = f"agent:{agent_id}"
-            lines = []
-            for line in context.splitlines():
-                # Include: lines that mention this agent's tag, lines with no
-                # agent tag (shared), and non-node lines (headers, edges)
-                if tag in line or not any(
-                    f"agent:" in line and f"agent:{agent_id}" not in line
-                    for _ in [None]
-                ):
-                    lines.append(line)
-            return "\n".join(lines)
-        return context
+        if not agent_id:
+            return _session.query(topic, self._graph)
+
+        # Build the set of allowed node IDs: this agent's nodes + untagged shared nodes.
+        # Node attribution is stored as tags — filtering must happen at the graph level,
+        # not on rendered string output (tags are not included in the serialized context).
+        allowed: set[str] = {
+            n.id for n in self._graph.all_nodes()
+            if not any(t.startswith("agent:") for t in n.tags)
+            or f"agent:{agent_id}" in n.tags
+        }
+
+        from .. import activation as _act
+        seeds = [nid for nid in _act.find_seeds(topic, self._graph) if nid in allowed]
+        if not seeds:
+            return "(no relevant memories found)"
+        activated = {
+            nid: lvl
+            for nid, lvl in _act.spread(seeds[:8], self._graph).items()
+            if nid in allowed
+        }
+        return _act.serialize(activated, self._graph) if activated else "(no relevant memories found)"
 
     def get_agent_nodes(self, agent_id: str) -> list[Any]:
         """Return all active nodes written by a specific agent."""

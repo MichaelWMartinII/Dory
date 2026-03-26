@@ -1,6 +1,6 @@
 # Dory
 
-**79.8% on LongMemEval. The best Python-native, local-first agent memory library.**
+Persistent memory for AI agents. Graph-based, spreading activation retrieval, principled forgetting. Single SQLite file. No server required.
 
 ```bash
 pip install dory-memory
@@ -17,19 +17,19 @@ print(mem.query("what does the user prefer for inference?"))
 # → MLX (updated preference, supersedes llama.cpp)
 ```
 
-Dory gives your agent persistent, structured memory across sessions — with spreading activation retrieval, principled forgetting, and an episodic layer that scored **79.8% on LongMemEval** (beats Mem0 68.4% and Zep 71.2%). Zero server. Single SQLite file. Works offline.
+**LongMemEval (500q, oracle split):** 80.6% with Claude Code MCP backend / 79.8% with direct Sonnet API.
 
 ---
 
 ## The problem
 
-Every time you start a new session, your agent starts from zero. Even systems that claim to "remember" you are doing keyword search through a flat list of notes. That's not memory — that's ctrl+F.
+Every session, your agent starts from zero. Systems that claim to "remember" typically do keyword search through a flat list of notes. That's not memory — it's ctrl+F.
 
-The deeper problem: naive memory injection makes things *worse*. Dumping everything into context creates noise that degrades model performance. Research ([Chroma, 2025](https://research.trychroma.com/context-rot)) shows all major frontier models degrade starting at 500–750 tokens of context.
+The deeper problem: naive context injection makes things *worse*. Research ([Chroma, 2025](https://research.trychroma.com/context-rot)) shows all major frontier models degrade starting at 500–750 tokens of context. Dumping everything into a prompt creates noise that degrades performance on the things that actually matter.
 
-## What Dory does differently
+## What Dory does
 
-**Four memory types, all in one place**
+**Four memory types**
 
 | Type | What it stores | Status |
 |---|---|---|
@@ -38,15 +38,15 @@ The deeper problem: naive memory injection makes things *worse*. Dumping everyth
 | Procedural | Skills, workflows, repeatable processes | ✓ |
 | Working | In-context window (managed by your LLM) | — |
 
-**Spreading activation retrieval** — not vector similarity search. Relevant memories pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred. That's how human memory works.
+**Spreading activation retrieval** — not vector similarity search. Relevant memories pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred. That's how human associative memory works.
 
-**Cacheable prefix output** — instead of regenerating your full memory context every turn (which blows prompt caching), Dory splits output into a *stable prefix* (same until memory actually changes) and a *dynamic suffix* (query-specific). Result: cache hits every turn. 4–10x cheaper to run agents with memory than without.
+**Cacheable prefix output** — Dory splits output into a *stable prefix* (unchanged until memory changes, enabling prompt cache hits) and a *dynamic suffix* (query-specific). Result: cache hits on every turn. Substantially cheaper to run agents with memory than without.
 
-**Principled forgetting** — three decay zones: active, archived, expired. Scores based on recency + frequency + relevance. Nothing is ever deleted — archived memories are queryable for historical context. No other production memory library ships this.
+**Principled forgetting** — three decay zones: active, archived, expired. Scores based on recency + frequency + relevance. Archived memories are queryable for historical context ("what was true in January?"). Nothing is ever deleted — only decayed.
 
-**Bi-temporal conflict resolution** — when a fact changes, the old version is archived with a `SUPERSEDES` edge and a timestamp. You can query "what was true in January" and get the right answer.
+**Bi-temporal conflict resolution** — when a fact changes, the old version is archived with a `SUPERSEDES` edge and a timestamp. Full provenance for every update.
 
-**Zero-server stack** — everything runs in a single SQLite file. `sqlite-vec` for vectors, FTS5 for keyword search, adjacency tables for the graph. No Postgres, no Neo4j, no Redis. Works offline.
+**Zero-server stack** — single SQLite file. FTS5 for keyword search, adjacency tables for the graph. No Postgres, no Neo4j, no Redis. Works offline.
 
 ---
 
@@ -55,7 +55,6 @@ The deeper problem: naive memory injection makes things *worse*. Dumping everyth
 ```python
 from dory import DoryMemory
 
-# No dependencies required — works out of the box
 mem = DoryMemory()
 
 # Add memories manually
@@ -74,7 +73,7 @@ mem.flush()
 mem.visualize()
 ```
 
-Or from the command line after any session:
+Or from the command line:
 
 ```bash
 dory visualize          # opens graph in browser
@@ -82,7 +81,7 @@ dory show               # print stats + core memories
 dory query "topic"      # spreading activation from the terminal
 ```
 
-**With auto-extraction** (add a model and Dory extracts memories from conversation turns automatically):
+**With auto-extraction** (Dory extracts memories from conversation turns automatically):
 
 ```python
 mem = DoryMemory(extract_model="qwen3:8b")                  # local via Ollama (5 GB)
@@ -102,9 +101,6 @@ mem = DoryMemory(                                           # GPT / Grok / any c
 mem.add_turn("user", "I'm working on AllergyFind today, need to add a menu endpoint")
 mem.add_turn("assistant", "What authentication approach are you using?")
 
-# Note: local extraction (Ollama) runs synchronously and may take 15–60s per batch
-# depending on model size. Cloud backends (Anthropic, OpenAI) are faster.
-
 # Build API-ready messages with prompt caching
 result = mem.build_context("menu endpoint authentication")
 messages = result.as_anthropic_messages(user_query)   # Anthropic SDK w/ cache_control
@@ -123,7 +119,7 @@ which dory-mcp
 claude mcp add --scope user dory -- /full/path/to/dory-mcp --db ~/.dory/engram.db
 ```
 
-The `--db` path defaults to `~/.dory/engram.db` if omitted. You can also set `DORY_DB_PATH` as an environment variable instead.
+The `--db` path defaults to `~/.dory/engram.db` if omitted. You can also set `DORY_DB_PATH` as an environment variable.
 
 Verify the server connected:
 ```bash
@@ -152,7 +148,7 @@ Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_
 
 ![Dory memory graph demo](https://raw.githubusercontent.com/MichaelWMartinII/Dory/main/docs/demo.gif)
 
-Force-directed knowledge graph with spreading activation query mode, edge type coloring, archived/superseded nodes, and session summary chain. Click any of the pre-set queries to see retrieval in action.
+Force-directed knowledge graph with spreading activation query mode, edge type coloring, archived/superseded nodes, and session summary chain.
 
 ---
 
@@ -182,7 +178,7 @@ from langgraph.graph import StateGraph, START, END
 mem = DoryMemoryNode(extract_model="claude-haiku-4-5-20251001", extract_backend="anthropic")
 
 builder = StateGraph(MemoryState)
-builder.add_node("load_memory", mem.load_context)   # or mem.aload_context for async
+builder.add_node("load_memory", mem.load_context)
 builder.add_node("record_turn", mem.record_turn)
 builder.add_edge(START, "load_memory")
 builder.add_edge("load_memory", "record_turn")
@@ -199,7 +195,6 @@ pool = SharedMemoryPool(db_path="shared.db")
 pool.observe("User prefers dark mode", agent_id="agent-1")
 pool.add_turn("user", "Let's ship it", agent_id="agent-2", session_id="s1")
 results = pool.query("UI preferences")
-agent_nodes = pool.get_agent_nodes("agent-1")
 ```
 
 ### Async API
@@ -220,21 +215,8 @@ stats   = await mem.aflush()
 from dory.export.jsonld import JSONLDExporter
 
 exporter = JSONLDExporter(graph)
-exporter.export("memory.jsonld.json")           # write to file
-data = exporter.export()                         # or get dict
-
-JSONLDExporter.import_into(graph, "memory.jsonld.json")   # round-trip import
-```
-
-### Advanced: direct pipeline access
-
-```python
-from dory import Graph, Observer, Prefixer
-
-graph = Graph("myapp.db")
-obs = Observer(graph, backend="ollama", model="qwen3:14b")
-p = Prefixer(graph)
-# ... same as DoryMemory but with full control
+exporter.export("memory.jsonld.json")
+JSONLDExporter.import_into(graph, "memory.jsonld.json")
 ```
 
 ---
@@ -243,20 +225,15 @@ p = Prefixer(graph)
 
 ### Knowledge graph
 
-Every piece of information is a node. Nodes have types: `ENTITY`, `CONCEPT`, `EVENT`, `PREFERENCE`, `BELIEF`, `PROCEDURE`, `SESSION` (episodic narrative), `SESSION_SUMMARY` (structured episodic with `salient_counts`). Edges between them are typed and weighted: `USES`, `WORKS_ON`, `PREFERS`, `SUPERSEDES`, `CO_OCCURS`, `SUPPORTS_FACT`, `TEMPORALLY_AFTER`, etc.
+Every piece of information is a typed node: `ENTITY`, `CONCEPT`, `EVENT`, `PREFERENCE`, `BELIEF`, `PROCEDURE`, `SESSION` (episodic narrative), `SESSION_SUMMARY` (structured episodic). Edges between them are typed and weighted: `USES`, `WORKS_ON`, `PREFERS`, `SUPERSEDES`, `CO_OCCURS`, `SUPPORTS_FACT`, `TEMPORALLY_AFTER`, etc.
 
-Salience is computed, not assigned:
-```
-salience = α × connectivity + β × activation_frequency + γ × recency
-```
-
-High-salience nodes become **core memories** — they anchor the stable context prefix.
+Salience is computed from connectivity, activation frequency, and recency. High-salience nodes become **core memories** — they anchor the stable context prefix.
 
 ### Observer
 
-Every N conversation turns (configurable), the Observer calls a local LLM to extract structured memories from the raw conversation. Extractions have confidence scores — anything below the threshold is logged but not written to the graph, guarding against false memory.
+Every N conversation turns, the Observer calls an LLM to extract structured memories. Extractions carry confidence scores — anything below threshold is logged but not written to the graph.
 
-Backends: Ollama (default), Anthropic (Claude), or any OpenAI-compatible endpoint (llama.cpp, Clanker, vLLM, GPT, Grok, etc.).
+Backends: Ollama (default), Anthropic (Claude), or any OpenAI-compatible endpoint.
 
 ### Prefixer
 
@@ -268,12 +245,10 @@ Builds context in two parts:
 
 [dynamic suffix]        ← spreading activation for this specific query
                           + recent episodic observations
-                          changes per query but small
 ```
 
 ### Decayer
 
-Runs periodically to score every node:
 ```
 score = recency_weight  × exp(-λ × days_since_activation)
       + frequency_weight × log(1 + activation_count)
@@ -284,7 +259,7 @@ Nodes below the active floor → archived. Below the archive floor → expired. 
 
 ### Reflector
 
-Finds near-duplicate nodes (Jaccard similarity ≥ 0.82, empirically tuned), merges them keeping the higher-salience one. Detects supersession — same subject, newer fact, Jaccard in [0.45, 0.82) — archives the old node, and adds a `SUPERSEDES` provenance edge. Old observations are compressed into summaries. Dedup thresholds are practical defaults chosen conservatively; sensitivity analysis is planned.
+Near-duplicate detection (Jaccard ≥ 0.82): merges duplicates, keeping the higher-salience node and rewiring edges. Supersession detection (Jaccard in [0.45, 0.82), shared subject): archives the older node, adds `SUPERSEDES` provenance edge. Old observations compressed into summaries.
 
 ---
 
@@ -297,7 +272,7 @@ dory/
 ├── activation.py     ← spreading activation engine
 ├── consolidation.py  ← edge decay, strengthen, prune, promote/demote core
 ├── session.py        ← session-level helpers: query, observe, write_turn, end_session
-├── memory.py         ← DoryMemory — the high-level drop-in API (sync + async)
+├── memory.py         ← DoryMemory — high-level API (sync + async)
 ├── visualize.py      ← D3.js interactive graph visualization
 ├── mcp_server.py     ← MCP tools (dory_query, dory_observe, dory_consolidate, …)
 ├── store.py          ← SQLite backend (nodes, edges, FTS5, observations)
@@ -310,37 +285,29 @@ dory/
 │   └── reflector.py  ← dedup, supersession, observation compression
 │
 ├── adapters/
-│   ├── langchain.py   ← DoryMemoryAdapter — LangChain BaseMemory drop-in
-│   ├── langgraph.py   ← DoryMemoryNode — LangGraph StateGraph nodes
-│   └── multi_agent.py ← SharedMemoryPool — thread-safe multi-agent memory
+│   ├── langchain.py   ← DoryMemoryAdapter (BaseMemory drop-in)
+│   ├── langgraph.py   ← DoryMemoryNode (StateGraph integration)
+│   └── multi_agent.py ← SharedMemoryPool (thread-safe multi-agent)
 │
 └── export/
-    └── jsonld.py      ← JSONLDExporter — portable JSON-LD round-trip
+    └── jsonld.py      ← JSON-LD round-trip export/import
 ```
 
 ---
 
 ## Local LLM setup
 
-Dory defaults to Ollama for LLM-based extraction (Observer) and embedding (vector search).
-
 ```bash
-# Pull the default models
 ollama pull qwen3:14b          # extraction
 ollama pull nomic-embed-text   # embeddings (768-dim, offline after pull)
 ```
 
-OpenAI-compatible endpoint (Clanker, llama.cpp server, vLLM):
+OpenAI-compatible endpoint (llama.cpp server, vLLM, etc.):
 ```python
-obs = Observer(
-    graph,
-    backend="openai",
-    base_url="http://localhost:8000",
-    model="qwen3",
-)
+obs = Observer(graph, backend="openai", base_url="http://localhost:8000", model="qwen3")
 ```
 
-Vector search activates automatically once `nomic-embed-text` is available. Falls back to FTS5 BM25 + substring search if no embedding model is running.
+Vector search activates automatically once `nomic-embed-text` is available. Falls back to FTS5 BM25 if no embedding model is running.
 
 ---
 
@@ -352,11 +319,11 @@ Vector search activates automatically once `nomic-embed-text` is available. Fall
 | `archived` | Invisible to normal queries | `graph.all_nodes(zone="archived")` |
 | `expired` | Completely invisible | `graph.all_nodes(zone=None)` |
 
-User-meaningful memory is never deleted by forgetting — archived and expired nodes retain full provenance and can be restored if reactivated. The one exception: exact structural duplicates detected by the Reflector are hard-merged (the lower-salience copy is removed, all its edges are rewired to the winner).
+Memory is never deleted — only decayed. Archived and expired nodes retain full provenance and can be restored if reactivated. The one exception: exact structural duplicates detected by the Reflector are hard-merged (lower-salience copy removed, edges rewired to the winner).
 
 ---
 
-## What's different from other memory libraries
+## Comparison
 
 | | mem0 | Zep | Letta | Mastra | **Dory** |
 |---|---|---|---|---|---|
@@ -385,17 +352,17 @@ Q1 · Supersession — "What was the inference backend before MLX replaced it?"
   ✗ Flat search: returns both nodes with equal score. No directionality. No timestamp.
 
 ──────────────────────────────────────────────────────────────────────
-Q4 · Semantic Path — "How does local-first philosophy connect to the 79.8% result?"
+Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% result?"
 
   ● [CONCEPT]    Local-first AI — data stays on device, no cloud
     └─[CO_OCCURS]──▶
   ● [PREFERENCE] Prefers local-first — no data leaves device unless necessary
     └─[PREFERS]──▶
-  ● [ENTITY]     Michael — solo developer
+  ● [ENTITY]     Developer — solo, Apple Silicon
     └─[WORKS_ON]──▶
   ● [ENTITY]     Dory — agent memory library
     └─[CO_OCCURS]──▶
-  ● [EVENT]      [2026-03-20] v0.3 full run — 79.8% Sonnet (+13pp)
+  ● [EVENT]      [2026-03-26] v0.4 full run — 80.6% Claude Code MCP
 
   ✗ Flat search: returns both endpoints as separate results. No connecting path.
 ```
@@ -409,77 +376,86 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 79.8% re
 | Q5 Provenance | `SUPPORTS_FACT` traversal | What proves a specific fact |
 | Q6 Belief Grounding | `SUPPORTS_FACT` + `BELIEF` | Which beliefs have evidence |
 
-None of these are answerable by cosine similarity alone. They require directed, typed edges between persistent nodes.
+---
+
+## Benchmark results
+
+[LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025), oracle split, 500 questions.
+
+| Version | Extract | Answer | n | Score |
+|---|---|---|---|---|
+| v0.1 | Haiku | Haiku | 500 | 54.4% |
+| v0.1 | Sonnet | Sonnet | 500 | 66.8% |
+| v0.3 | Sonnet | Sonnet (direct API) | 500 | 79.8% |
+| **v0.4** | **Haiku** | **Claude Code (MCP)** | **500** | **80.6%** |
+
+Per-category (v0.3 vs v0.4):
+
+| Category | v0.3 Sonnet | v0.4 Claude Code MCP | Δ | n |
+|---|---|---|---|---|
+| knowledge-update | 84.6% | **89.7%** | +5.1 | 78 |
+| multi-session | 80.5% | 79.7% | -0.8 | 133 |
+| single-session-assistant | 87.5% | 83.9% | -3.6 | 56 |
+| single-session-preference | 46.7% | **63.3%** | **+16.6** | 30 |
+| single-session-user | 88.6% | **92.9%** | +4.3 | 70 |
+| temporal-reasoning | 75.9% | 72.2% | -3.7 | 133 |
+| **Overall** | **79.8%** | **80.6%** | **+0.8** | **500** |
+
+The 0.8pp overall difference is within the noise floor (±3.5pp binomial CI on 500 questions). The category-level results are the meaningful signal — in particular, single-session-preference (+16.6pp) is consistent across two independent runs. Full methodology and failure analysis: [`benchmarks/REPORT_claudecode_mcp_v04.md`](benchmarks/REPORT_claudecode_mcp_v04.md).
+
+Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
+
+¹ Mastra uses GPT-4o-mini on TypeScript. Architecturally different stacks — not directly comparable.
+
+**Note:** LongMemEval oracle split uses pre-filtered context (~15K tokens per question). Performance with live, unfiltered conversations will differ.
+
+---
 
 ## Roadmap
 
-**Shipped (v0.1)**
-- [x] MCP server — expose Dory memory as MCP tools for Claude Code / Claude Desktop
-- [x] LangChain adapter — `dory.adapters.langchain.DoryMemoryAdapter` implements `BaseMemory`
-- [x] LangGraph adapter — `dory.adapters.langgraph.DoryMemoryNode` for StateGraph integration
-- [x] Procedural memory — `PROCEDURE` node type for skills, workflows, and repeatable processes
-- [x] Multi-agent shared memory — `dory.adapters.multi_agent.SharedMemoryPool` with thread-safe writes and agent attribution
-- [x] Portable import/export format — `dory.export.jsonld.JSONLDExporter` for JSON-LD round-trips
+**v0.1**
+- [x] MCP server — `dory_query`, `dory_observe`, `dory_consolidate`, `dory_visualize`, `dory_stats`
+- [x] LangChain adapter — `DoryMemoryAdapter` implements `BaseMemory`
+- [x] LangGraph adapter — `DoryMemoryNode` for StateGraph integration
+- [x] Procedural memory — `PROCEDURE` node type
+- [x] Multi-agent shared memory — `SharedMemoryPool` with thread-safe writes
+- [x] JSON-LD export/import
 
-**Shipped (v0.2)**
-- [x] Episodic layer — `SESSION_SUMMARY` nodes with structured `salient_counts` metadata
-- [x] Retrieval fusion — three-mode routing (graph / episodic / hybrid) via deterministic regex, no extra LLM calls
-- [x] Staged retrieval — spreading activation → SUPPORTS_FACT traversal → SESSION_SUMMARY injection
-- [x] Behavioral preference synthesis — `Reflector` detects repeated behavioral patterns across sessions and synthesizes PREFERENCE nodes without LLM calls
+**v0.2**
+- [x] Episodic layer — `SESSION_SUMMARY` nodes with `salient_counts` metadata
+- [x] Retrieval fusion — three-mode routing (graph / episodic / hybrid)
+- [x] Behavioral preference synthesis — `Reflector` synthesizes PREFERENCE nodes from repeated patterns without LLM calls
 
-**Shipped (v0.3)**
-- [x] Full 500-question LongMemEval run — 79.8% Sonnet/Sonnet (+13.0pp over v0.1)
+**v0.3**
+- [x] 79.8% on LongMemEval full 500-question run (Sonnet)
 - [x] Temporal arithmetic prompt — step-by-step date math before answering
-- [x] Count cross-validation — `salient_counts` verified against EVENT nodes, low-confidence flagged
-- [x] Behavioral preference synthesis — `Reflector` synthesizes PREFERENCE nodes from repeated patterns
-- [x] Graph topology demo — `demo_topology.py` showing provenance / evolution queries flat systems can't answer
-- [x] Ollama demo — `demo_ollama.py` fully local two-session memory demo (no API key required)
-- [x] Qwen3 thinking mode fix — `think=False` in Ollama extraction backend cuts extraction time 3x
+- [x] Count cross-validation via `salient_counts`
+- [x] Graph topology demo — `demo_topology.py`
+- [x] Ollama demo — `demo_ollama.py`, fully local, no API key required
 
-**In progress (v0.4)**
-- [ ] Preference inference — targeted improvement on single-session-preference (currently 46.7%)
-- [ ] S-split benchmark — longer sessions (~115K tokens), better test of spreading activation value
-- [ ] Production hardening — concurrent write safety, adversarial memory injection defense
+**v0.4**
+- [x] 80.6% on LongMemEval full 500-question run (Claude Code MCP backend)
+- [x] `--answer-backend claude-code-mcp` benchmark option — Claude Code queries Dory autonomously via MCP
+- [x] Preference context improvements — FTS-ranked retrieval, deduplication, event elevation
+- [x] Extended PREFERENCE extraction guidance in Observer
+
+**v0.5 (planned)**
+- [ ] Observer concurrency — async extraction, target <30s/question
+- [ ] Temporal date-anchoring — improved relative date resolution in MCP system prompt
+- [ ] Multi-session counting nodes — frequency signal on repeated-event nodes
 
 ---
 
 ## Research basis
 
-Dory draws from:
 - [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560) — two-tier memory architecture
 - [Zep: A Temporal Knowledge Graph Architecture](https://arxiv.org/abs/2501.13956) — bi-temporal provenance
 - [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
-- [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture (Python port)
-- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — the benchmark we care about. Published scores: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
-
-  | Version | Extract | Answer | Questions | Score | Notes |
-  |---|---|---|---|---|---|
-  | v0.1 | Haiku | Haiku | 500 (full) | 54.4% | Baseline |
-  | v0.1 | Sonnet | Sonnet | 500 (full) | 66.8% | |
-  | v0.3 | Haiku | Haiku | 40 (spot check) | 67.5% | Episodic hybrid, spot check |
-  | **v0.3** | **Sonnet** | **Sonnet** | **500 (full)** | **79.8%** | **Episodic hybrid, full run** |
-
-  Category breakdown (v0.3 Sonnet, 500q):
-
-  | Category | v0.1 Sonnet | v0.3 Sonnet | Δ |
-  |---|---|---|---|
-  | temporal-reasoning | 46.6% | 75.9% | +29.3pp |
-  | knowledge-update | 75.6% | 84.6% | +9.0pp |
-  | multi-session | 70.7% | 80.5% | +9.8pp |
-  | single-session-assistant | 82.1% | 87.5% | +5.4pp |
-  | single-session-user | 85.7% | 88.6% | +2.9pp |
-  | single-session-preference | 43.3% | 46.7% | +3.3pp |
-  | **Overall** | **66.8%** | **79.8%** | **+13.0pp** |
-
-  ¹ Mastra uses GPT-4o-mini (TypeScript). Dory uses Claude on Python. Architecturally
-  different stacks — not directly comparable. See [ablation study](benchmarks/ABLATION.md)
-  for component attribution.
-
-  **Disclaimer:** LongMemEval oracle split uses pre-filtered context (~15K tokens per question).
-  Production performance with live, noisy, unfiltered conversations will differ.
+- [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture
+- [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — evaluation benchmark
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
-- [Hopfield (1982) — Neural networks and physical systems with emergent collective computational abilities](https://www.pnas.org/doi/10.1073/pnas.79.8.2554) — statistical mechanics of associative memory; energy landscape formulation underlying spreading activation (Nobel Prize in Physics, 2024)
+- [Hopfield (1982)](https://www.pnas.org/doi/10.1073/pnas.79.8.2554) — associative memory energy landscape (Nobel Prize in Physics, 2024)
 
 ---
 

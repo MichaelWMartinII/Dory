@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
+
+# Per-thread connection cache — SQLite connections are not thread-safe to share
+# across threads without check_same_thread=False, but creating a new connection
+# per call has measurable overhead for high-frequency use.
+# Each thread gets its own connection per db path, kept open for the thread's lifetime.
+_thread_local = threading.local()
 
 DEFAULT_GRAPH_PATH = Path.home() / ".dory" / "engram.db"
 
@@ -60,12 +67,8 @@ CREATE TABLE IF NOT EXISTS compressed_obs (
 """
 
 
-def _connect(path: Path) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_SCHEMA)
-    # Migrate older DBs that predate zone/superseded_at/metadata columns
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply schema migrations for columns added after the initial release."""
     for col, defn in [
         ("zone", "TEXT DEFAULT 'active'"),
         ("superseded_at", "TEXT"),
@@ -76,14 +79,54 @@ def _connect(path: Path) -> sqlite3.Connection:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
-    return conn
+
+
+def _connect(path: Path) -> sqlite3.Connection:
+    """
+    Return a SQLite connection for this thread and db path.
+
+    Connections are cached per-thread per-path — creating a new connection on
+    every call has overhead that accumulates for high-frequency workloads.
+    WAL mode is enabled so readers don't block writers.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    cache: dict[str, sqlite3.Connection] = getattr(_thread_local, "connections", None)
+    if cache is None:
+        _thread_local.connections = {}
+        cache = _thread_local.connections
+
+    key = str(path.resolve())
+    if key not in cache:
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.executescript(_SCHEMA)
+        _migrate(conn)
+        cache[key] = conn
+
+    return cache[key]
+
+
+def close_connection(path: Path) -> None:
+    """Explicitly close and remove the cached connection for this thread/path."""
+    cache: dict | None = getattr(_thread_local, "connections", None)
+    if cache is None:
+        return
+    key = str(path.resolve())
+    conn = cache.pop(key, None)
+    if conn:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def load(path: Path = DEFAULT_GRAPH_PATH) -> dict:
     conn = _connect(path)
     nodes = [dict(r) for r in conn.execute("SELECT * FROM nodes").fetchall()]
     edges = [dict(r) for r in conn.execute("SELECT * FROM edges").fetchall()]
-    conn.close()
     for n in nodes:
         n["tags"] = json.loads(n.get("tags") or "[]")
         n["is_core"] = bool(n["is_core"])
@@ -174,7 +217,6 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
         )
 
     conn.commit()
-    conn.close()
 
 
 def search_fts(query: str, path: Path = DEFAULT_GRAPH_PATH, limit: int = 20) -> list[str]:
@@ -204,8 +246,8 @@ def search_fts(query: str, path: Path = DEFAULT_GRAPH_PATH, limit: int = 20) -> 
             return [r["id"] for r in rows]
         except sqlite3.OperationalError:
             return []
-    finally:
-        conn.close()
+    except Exception:
+        return []
 
 
 def write_observation(
@@ -224,7 +266,6 @@ def write_observation(
         (obs_id, session_id, role, content, created_at or now_iso()),
     )
     conn.commit()
-    conn.close()
 
 
 def get_observations(
@@ -244,5 +285,4 @@ def get_observations(
             "SELECT * FROM observations ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
