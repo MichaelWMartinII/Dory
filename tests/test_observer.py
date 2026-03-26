@@ -46,6 +46,7 @@ def test_add_turn_triggers_extraction_at_threshold(db_path, graph):
         assert mock_llm.call_count == 0  # not yet
 
         obs.add_turn("user", "turn three")
+        obs.flush()  # drain thread pool before asserting
         assert mock_llm.call_count == 1  # triggered
 
 
@@ -86,6 +87,7 @@ def test_flush_saves_graph(db_path):
         mock_llm.return_value = _extracted([_node_extract("test fact")])
         obs = Observer(g, db_path=db_path, threshold=1, backend="ollama")
         obs.add_turn("user", "one turn")
+        obs.flush()
 
     g2 = Graph(path=db_path)
     # At minimum the schema was set up and save was called
@@ -109,6 +111,7 @@ def test_write_creates_nodes_from_extraction(db_path, graph):
         ])
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama")
         obs.add_turn("user", "I prefer local AI")
+        obs.flush()
 
     nodes = graph.all_nodes()
     assert any("local-first AI" in n.content for n in nodes)
@@ -122,6 +125,7 @@ def test_write_skips_low_confidence_nodes(db_path, graph):
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama",
                        confidence_floor=0.7)
         obs.add_turn("user", "something vague")
+        obs.flush()
 
     assert obs.stats()["nodes_skipped"] == 1
     assert len(graph.all_nodes()) == 0
@@ -135,6 +139,7 @@ def test_write_accepts_high_confidence_nodes(db_path, graph):
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama",
                        confidence_floor=0.7)
         obs.add_turn("user", "something definite")
+        obs.flush()
 
     assert obs.stats()["nodes_written"] == 1
     assert len(graph.all_nodes()) == 1
@@ -153,6 +158,7 @@ def test_write_creates_edges_between_nodes(db_path, graph):
         mock_llm.return_value = _extracted(nodes, edges)
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama")
         obs.add_turn("user", "AllergyFind uses FastAPI")
+        obs.flush()
 
     assert len(graph.all_edges()) >= 1
     edge = graph.all_edges()[0]
@@ -164,6 +170,7 @@ def test_write_handles_llm_error_gracefully(db_path, graph):
         mock_llm.return_value = {"_error": "model not found"}
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama")
         obs.add_turn("user", "something")  # should not raise
+        obs.flush()
 
     assert obs.stats()["errors"] == 1
 
@@ -175,6 +182,7 @@ def test_write_handles_unknown_node_type(db_path, graph):
         ])
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama")
         obs.add_turn("user", "trigger")
+        obs.flush()
 
     # Falls back to CONCEPT — should still write
     nodes = graph.all_nodes()
@@ -218,6 +226,7 @@ def test_find_similar_reinforces_existing_node_on_duplicate(db_path, graph):
         ])
         obs = Observer(graph, db_path=db_path, threshold=1, backend="ollama")
         obs.add_turn("user", "trigger extraction")
+        obs.flush()
 
     # Should reinforce existing node, not create a new one
     assert existing.activation_count > before
@@ -232,6 +241,7 @@ def test_observer_uses_openai_compat_backend(db_path, graph):
         obs = Observer(graph, db_path=db_path, threshold=1,
                        backend="openai", base_url="http://localhost:8000")
         obs.add_turn("user", "trigger")
+        obs.flush()
 
     mock_llm.assert_called_once()
     assert len(graph.all_nodes()) == 1

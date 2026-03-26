@@ -221,8 +221,12 @@ def _answer_claude_code(question: str, context: str, question_type: str = "", qu
 
 _MCP_TYPE_HINTS = {
     "temporal-reasoning": (
-        "This question is about timing or ordering of events. "
-        "Use date prefixes in memories to calculate exact differences."
+        "This question is about timing, ordering, or counting events. "
+        "Use date prefixes in memories to calculate exact differences. "
+        "Count days INCLUSIVELY — both start and end dates count "
+        "(e.g. Nov 18 to Nov 24 = 7 days: 18,19,20,21,22,23,24). "
+        "Always use the REFERENCE DATE shown above for any relative calculations "
+        "(\"X months ago\", \"last week\", etc.) — do not infer or guess today's date."
     ),
     "multi-session": (
         "This question may require info from multiple conversations. "
@@ -269,12 +273,16 @@ def _answer_claude_code_mcp(
     }
 
     type_hint = _MCP_TYPE_HINTS.get(question_type, "")
-    date_hint = f" Today's date is {question_date}." if question_date else ""
+    date_line = f"REFERENCE DATE: {question_date}\n\n" if question_date else ""
 
     system_prompt = (
+        f"{date_line}"
         "You have access to a Dory memory graph containing someone's conversation history. "
-        "Call dory_query with relevant search terms to retrieve memories, then answer "
-        f"the question based on what you find. {type_hint}{date_hint} "
+        "Call dory_query with relevant search terms to retrieve relevant memories. "
+        "Treat retrieved memories as contextual hints — reference them when genuinely "
+        "relevant to the question, but use your judgment. Do not force memories into "
+        "the answer if they don't naturally apply. "
+        f"{type_hint} "
         "Give a short, direct answer."
     )
 

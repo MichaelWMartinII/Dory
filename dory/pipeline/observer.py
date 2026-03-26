@@ -19,8 +19,10 @@ Usage:
     obs.flush()  # force extraction at end of session
 """
 
+import concurrent.futures
 import json
 import re
+import threading
 from typing import Any
 
 from ..graph import Graph
@@ -282,6 +284,14 @@ class Observer:
         self._buffer: list[dict] = []
         self._stats = {"turns_logged": 0, "extractions_run": 0, "nodes_written": 0, "nodes_skipped": 0, "implicit_inferred": 0, "errors": 0}
 
+        # Async extraction: LLM calls run in parallel, writes serialized via _write_lock
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="dory_obs"
+        )
+        self._write_lock = threading.Lock()
+        self._pending: list[concurrent.futures.Future] = []
+        self._pending_lock = threading.Lock()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -289,7 +299,7 @@ class Observer:
     def add_turn(self, role: str, content: str) -> None:
         """
         Add a conversation turn. Logs it immediately to the episodic store
-        and triggers extraction when the buffer hits the threshold.
+        and triggers async extraction when the buffer hits the threshold.
         """
         obs_id = new_id()
         store.write_observation(
@@ -304,18 +314,49 @@ class Observer:
         self._stats["turns_logged"] += 1
 
         if len(self._buffer) >= self.threshold:
-            self._extract()
+            # Snapshot and clear the buffer immediately so add_turn() returns fast.
+            # The actual LLM call + write happen in the thread pool.
+            buffer_snapshot = list(self._buffer)
+            self._buffer = []
+            future = self._executor.submit(self._run_extract, buffer_snapshot)
+            with self._pending_lock:
+                self._pending.append(future)
 
     def flush(self, session_date: str = "") -> dict:
         """
-        Force extraction of any remaining buffered turns.
-        Call at end of session.
-        Returns extraction stats.
+        Force extraction of any remaining buffered turns, wait for all
+        in-flight extractions to complete, then save the graph.
+        Call at end of session. Returns extraction stats.
         """
         if self._buffer:
-            self._extract(session_date=session_date)
+            buffer_snapshot = list(self._buffer)
+            self._buffer = []
+            future = self._executor.submit(self._run_extract, buffer_snapshot, session_date)
+            with self._pending_lock:
+                self._pending.append(future)
+
+        # Drain all in-flight futures before saving
+        with self._pending_lock:
+            pending = list(self._pending)
+            self._pending.clear()
+        for future in pending:
+            try:
+                future.result(timeout=300)
+            except Exception:
+                self._stats["errors"] += 1
+
         self.graph.save()
         return dict(self._stats)
+
+    def close(self) -> None:
+        """Shut down the thread pool. Safe to call multiple times."""
+        self._executor.shutdown(wait=False)
+
+    def __del__(self) -> None:
+        try:
+            self._executor.shutdown(wait=False)
+        except Exception:
+            pass
 
     def stats(self) -> dict:
         return dict(self._stats)
@@ -324,14 +365,11 @@ class Observer:
     # Internal
     # ------------------------------------------------------------------
 
-    def _extract(self, session_date: str = "") -> None:
-        if not self._buffer:
-            return
-
+    def _run_extract(self, buffer_snapshot: list[dict], session_date: str = "") -> None:
+        """Worker: runs in thread pool. LLM call is parallel; write is serialized."""
         turns_text = "\n".join(
-            f"{t['role'].upper()}: {t['content']}" for t in self._buffer
+            f"{t['role'].upper()}: {t['content']}" for t in buffer_snapshot
         )
-        self._buffer = []
         self._stats["extractions_run"] += 1
 
         raw = self._call_llm(turns_text, session_date=session_date)
@@ -339,14 +377,14 @@ class Observer:
             self._stats["errors"] += 1
             return
 
-        self._write(raw)
-
-        # Optional second pass: infer implicit preferences from extracted events/concepts
-        if self.infer_implicit and raw.get("nodes"):
-            implicit = self._infer_implicit_preferences(raw["nodes"])
-            if implicit:
-                self._write({"nodes": implicit, "edges": []})
-                self._stats["implicit_inferred"] += len(implicit)
+        with self._write_lock:
+            self._write(raw)
+            # Optional second pass: infer implicit preferences from extracted events/concepts
+            if self.infer_implicit and raw.get("nodes"):
+                implicit = self._infer_implicit_preferences(raw["nodes"])
+                if implicit:
+                    self._write({"nodes": implicit, "edges": []})
+                    self._stats["implicit_inferred"] += len(implicit)
 
     def _call_llm(self, turns_text: str, session_date: str = "") -> dict | None:
         if self.backend == "ollama":
@@ -410,6 +448,24 @@ class Observer:
             node_id = _session.observe(content, node_type, self.graph, tags=tags)
             content_to_id[content] = node_id
             self._stats["nodes_written"] += 1
+
+            # Seed activation_count from extraction confidence so that weak signals
+            # (single mentions, low confidence) start lower and decay faster than
+            # strongly-confirmed facts. Prevents one-off questions from persisting
+            # with the same salience as repeatedly-confirmed preferences.
+            node = self.graph.get_node(node_id)
+            if node is not None:
+                if confidence >= 0.95:
+                    node.activation_count = 3
+                elif confidence >= 0.85:
+                    node.activation_count = 2
+                else:
+                    node.activation_count = 1
+                node.metadata["signal_strength"] = (
+                    "strong" if confidence >= 0.95
+                    else "moderate" if confidence >= 0.85
+                    else "weak"
+                )
 
         # Write edges
         for ed in edges_data:

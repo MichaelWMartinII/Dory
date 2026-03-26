@@ -54,6 +54,10 @@ def dory_query(topic: str) -> str:
     Returns relevant memories and relationships for the given topic.
     Call this at the start of a session or when switching to a new topic.
 
+    Retrieved memories are contextual hints ranked by relevance and recency.
+    Use your judgment about which memories apply to the current question —
+    not every retrieved memory needs to be referenced in your response.
+
     Args:
         topic: Natural language description of what you want to recall.
     """
