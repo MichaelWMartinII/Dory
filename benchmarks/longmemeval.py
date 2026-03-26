@@ -200,13 +200,14 @@ def _answer_openai(question: str, context: str, model: str, base_url: str, api_k
 
 def _answer_claude_code(question: str, context: str, question_type: str = "", question_date: str = "") -> str:
     """
-    Use `claude -p --bare` with Dory context injected as full prompt.
+    Use `claude -p` with Dory context injected as full prompt (prompt via stdin).
     Approach A: same context as other backends, but answered by the Claude Code CLI.
     """
     import subprocess
     full_prompt = _get_prompt(question, context, question_type, question_date)
     result = subprocess.run(
-        ["claude", "-p", "--output-format", "text", "--bare", full_prompt],
+        ["claude", "-p", "--output-format", "text"],
+        input=full_prompt,
         capture_output=True,
         text=True,
         timeout=120,
@@ -286,13 +287,12 @@ def _answer_claude_code_mcp(
             [
                 "claude", "-p",
                 "--output-format", "text",
-                "--bare",
                 "--dangerously-skip-permissions",
                 "--strict-mcp-config",
                 "--mcp-config", mcp_config_path,
                 "--system-prompt", system_prompt,
-                question,
             ],
+            input=question,
             capture_output=True,
             text=True,
             timeout=180,
