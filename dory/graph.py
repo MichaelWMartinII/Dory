@@ -164,10 +164,15 @@ class Graph:
 
         max_degree = max(degrees.values()) or 1
         max_activations = max((n.activation_count for n in self._nodes.values()), default=1) or 1
+        max_distinct = max((n.distinct_sessions for n in self._nodes.values()), default=1) or 1
 
         for node in self._nodes.values():
             connectivity = degrees[node.id] / max_degree
-            reinforcement = math.log(node.activation_count + 1) / math.log(max_activations + 1)
+            raw_reinforcement = math.log(node.activation_count + 1) / math.log(max_activations + 1)
+            # Weight reinforcement by session diversity: a preference confirmed across
+            # multiple sessions is more persistent than one hit multiple times in one session.
+            diversity = math.log(node.distinct_sessions + 1) / math.log(max_distinct + 1)
+            reinforcement = raw_reinforcement * (0.5 + 0.5 * diversity)
             recency = _recency_score(node.last_activated)
             node.salience = alpha * connectivity + beta * reinforcement + gamma * recency
 

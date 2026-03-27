@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     tags TEXT DEFAULT '[]',
     zone TEXT DEFAULT 'active',
     superseded_at TEXT,
-    metadata TEXT DEFAULT '{}'
+    metadata TEXT DEFAULT '{}',
+    distinct_sessions INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -73,6 +74,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("zone", "TEXT DEFAULT 'active'"),
         ("superseded_at", "TEXT"),
         ("metadata", "TEXT DEFAULT '{}'"),
+        ("distinct_sessions", "INTEGER DEFAULT 0"),
     ]:
         try:
             conn.execute(f"ALTER TABLE nodes ADD COLUMN {col} {defn}")
@@ -160,8 +162,9 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
             """
             INSERT INTO nodes
                 (id, type, content, created_at, last_activated,
-                 activation_count, salience, is_core, tags, zone, superseded_at, metadata)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                 activation_count, salience, is_core, tags, zone, superseded_at, metadata,
+                 distinct_sessions)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
                 type=excluded.type,
                 content=excluded.content,
@@ -172,7 +175,8 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
                 tags=excluded.tags,
                 zone=excluded.zone,
                 superseded_at=excluded.superseded_at,
-                metadata=excluded.metadata
+                metadata=excluded.metadata,
+                distinct_sessions=excluded.distinct_sessions
             """,
             (
                 n["id"], n["type"], n["content"],
@@ -183,6 +187,7 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
                 n.get("zone", "active"),
                 n.get("superseded_at"),
                 json.dumps(metadata),
+                n.get("distinct_sessions", 0),
             ),
         )
 

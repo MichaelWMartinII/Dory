@@ -67,7 +67,8 @@ class Node:
     tags: list[str] = field(default_factory=list)
     zone: str = ZONE_ACTIVE          # active | archived | expired
     superseded_at: str | None = None # ISO timestamp when this node was superseded
-    metadata: dict = field(default_factory=dict)  # arbitrary structured data (e.g. salient_counts)
+    metadata: dict = field(default_factory=dict)  # arbitrary structured data
+    distinct_sessions: int = 0       # how many distinct sessions have reinforced this node
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +84,7 @@ class Node:
             "zone": self.zone,
             "superseded_at": self.superseded_at,
             "metadata": self.metadata,
+            "distinct_sessions": self.distinct_sessions,
         }
 
     @classmethod
@@ -100,6 +102,7 @@ class Node:
             zone=d.get("zone", ZONE_ACTIVE),
             superseded_at=d.get("superseded_at"),
             metadata=d.get("metadata", {}),
+            distinct_sessions=d.get("distinct_sessions", 0),
         )
 
 

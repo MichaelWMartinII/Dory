@@ -441,6 +441,13 @@ class Observer:
                 # Reinforce by updating last_activated
                 existing.activation_count += 1
                 existing.last_activated = now_iso()
+                # Track session diversity: increment distinct_sessions only if this
+                # session hasn't already contributed to this node.
+                sessions_seen: list = existing.metadata.get("sessions_seen") or []
+                if self.session_id not in sessions_seen:
+                    sessions_seen = list(sessions_seen) + [self.session_id]
+                    existing.metadata["sessions_seen"] = sessions_seen
+                    existing.distinct_sessions = len(sessions_seen)
                 content_to_id[content] = existing.id
                 self._stats["nodes_written"] += 1
                 continue
@@ -466,6 +473,9 @@ class Observer:
                     else "moderate" if confidence >= 0.85
                     else "weak"
                 )
+                # First session to see this node
+                node.distinct_sessions = 1
+                node.metadata["sessions_seen"] = [self.session_id]
 
         # Write edges
         for ed in edges_data:
