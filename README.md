@@ -362,7 +362,7 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
     └─[WORKS_ON]──▶
   ● [ENTITY]     Dory — agent memory library
     └─[CO_OCCURS]──▶
-  ● [EVENT]      [2026-03-26] v0.4 full run — 80.6% Claude Code MCP
+  ● [EVENT]      [2026-03-28] v0.5 temporal spot check — 90.0% temporal-reasoning
 
   ✗ Flat search: returns both endpoints as separate results. No connecting path.
 ```
@@ -388,6 +388,9 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
 | v0.1 | Sonnet | Sonnet | 500 | 66.8% |
 | v0.3 | Sonnet | Sonnet (direct API) | 500 | 79.8% |
 | **v0.4** | **Haiku** | **Claude Code (MCP)** | **500** | **80.6%** |
+| **v0.5** | **Haiku** | **Claude Code (MCP)** | **30*** | **90.0% temporal** |
+
+\* v0.5 temporal spot check (30 questions, temporal-reasoning category only). Full 500q run pending.
 
 Per-category (v0.3 vs v0.4):
 
@@ -439,10 +442,17 @@ Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
 - [x] Preference context improvements — FTS-ranked retrieval, deduplication, event elevation
 - [x] Extended PREFERENCE extraction guidance in Observer
 
-**v0.5 (planned)**
-- [ ] Observer concurrency — async extraction, target <30s/question
-- [ ] Temporal date-anchoring — improved relative date resolution in MCP system prompt
-- [ ] Multi-session counting nodes — frequency signal on repeated-event nodes
+**v0.5**
+- [x] Observer async extraction — `ThreadPoolExecutor`, LLM calls parallel, writes serialized; `flush()` is sync point
+- [x] Temporal date-anchoring — `REFERENCE DATE:` at top of MCP system prompt; inclusive day-counting rule
+- [x] Confidence-seeded `activation_count` — high-confidence extractions start with higher salience, decay slower
+- [x] Session diversity weighting — `distinct_sessions` field; cross-session nodes score higher than single-session enthusiasm
+- [x] Archived node isolation — archived nodes no longer surface in `dory_query` results
+- [x] Removed behavioral synthesis noise — `Reflector` keyword-synthesis disabled; signal handled structurally
+
+**v0.6 (planned)**
+- [ ] Full 500q benchmark run with v0.5 pipeline
+- [ ] Multi-session counting improvements
 
 ---
 

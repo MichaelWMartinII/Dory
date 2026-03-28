@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .graph import Graph
-from .schema import now_iso, EdgeType
+from .schema import now_iso, EdgeType, ZONE_ACTIVE
 
 
 def _fmt_date(iso: str | None) -> str:
@@ -79,14 +79,16 @@ def find_seeds(query: str, graph: Graph) -> list[str]:
     # 1. FTS BM25 — use OR over key terms for recall (avoids AND-mode over-constraining)
     fts_ids = store.search_fts(_fts_query(query), graph.path)
     for rank, nid in enumerate(fts_ids):
-        if nid in graph._nodes:
+        node = graph._nodes.get(nid)
+        if node and node.zone == ZONE_ACTIVE:
             seen[nid] = rank
 
     # 2. Vector KNN (if available)
     if vector.available():
         vec_ids = vector.knn_search(query, graph.path)
         for rank, nid in enumerate(vec_ids):
-            if nid in graph._nodes and nid not in seen:
+            node = graph._nodes.get(nid)
+            if node and node.zone == ZONE_ACTIVE and nid not in seen:
                 seen[nid] = len(fts_ids) + rank
 
     # 3. Substring fallback for anything not caught above
@@ -125,6 +127,9 @@ def spread(
                 neighbor_id = (
                     edge.target_id if edge.source_id == node_id else edge.source_id
                 )
+                neighbor = graph.get_node(neighbor_id)
+                if not neighbor or neighbor.zone != ZONE_ACTIVE:
+                    continue
                 received = level * edge.weight * depth_decay
                 if received >= threshold:
                     traversed_edges.add(edge.id)
@@ -171,7 +176,7 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
     lines = []
     for node_id, level in ranked:
         node = graph.get_node(node_id)
-        if not node:
+        if not node or node.zone != ZONE_ACTIVE:
             continue
         core_marker = " [CORE]" if node.is_core else ""
         # SESSION nodes already embed the date in their content as "[YYYY-MM-DD] Session: ..."

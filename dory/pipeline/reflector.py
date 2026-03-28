@@ -288,6 +288,19 @@ class Reflector:
 
     def _synthesize_behavioral_preferences(self) -> int:
         """
+        Disabled: keyword-frequency synthesis generates low-quality noise nodes
+        ("User shows repeated preference for 'X'") that pollute query results.
+        Signal strength is now handled structurally via confidence-seeded
+        activation_count and distinct_sessions weighting in salience.
+
+        Returns 0 without touching the graph.
+        """
+        return 0
+
+    def _synthesize_behavioral_preferences_disabled(self) -> int:
+        """
+        Original implementation — kept for reference.
+
         Detect latent preferences reinforced by repeated explicit preference statements
         across sessions.
 
