@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Visualization is now safe-by-default: generated HTML no longer loads remote
+  D3.js unless explicitly requested. The default output is a local-only fallback
+  view that still exposes node and edge data.
+- `DoryMemory.visualize()` and `dory visualize` now support explicit opt-in to
+  remote assets for the full interactive graph view.
+- README benchmark and project-status sections were updated to reflect the
+  current `v0.5` state and the formalized benchmark surface.
+
+### Repo cleanup
+- Removed stale `benchmarks/eval_and_compare.sh`, which referenced missing benchmark files.
+- Archived the local-only demo from `examples/live_chat.py` to `examples/archive/live_chat_legacy.py`.
+- Moved historical user-experience reports from `tests/user_tests/` to `docs/archive/user-tests/`.
+- Added `benchmarks/README.md` and `docs/REPO_CLEANUP_2026-03-29.md`.
+
 ## [0.3.8] — 2026-03-22
 
 ### Added
@@ -172,3 +189,15 @@ Initial release.
 - Async API throughout
 - SQLite backend (FTS5 + optional sqlite-vec)
 - JSON-LD export/import
+# Unreleased
+
+## Security / reliability hardening
+
+- Switched persistence away from implicit full-snapshot deletion to explicit
+  tombstone-based deletion, reducing the risk that a stale `Graph` instance
+  wipes rows written by another process.
+- Sanitized raw observations at write time and redact obvious prompt-injection
+  content before it can be replayed through history/recent-observation paths.
+- Replaced insecure `tempfile.mktemp()` usage in `examples/demo_topology.py`.
+- Added `SECURITY.md` and `docs/HARDENING_2026-03-29.md`, including revert
+  instructions for each hardening change.

@@ -1,218 +1,435 @@
-# Architecture — Dory
+# Dory Architecture
 
-> Originally written under the project name "Engram". Published as `dory-memory`.
+`Dory` is a local-first memory system for AI agents. It stores semantic memory,
+episodic traces, and retrieval metadata in a single SQLite database, then uses
+graph traversal plus query-specific routing to build context for an LLM.
 
-*An engram is the physical substrate of a memory in the brain — the actual trace left behind by experience. This project is the engineered equivalent for AI companions.*
+The current implementation is not the original "Engram" prototype described in
+older docs. This file describes the architecture that exists in the codebase
+today.
 
----
+## Design Goals
 
-## The Problem
+Dory is built around a few constraints:
 
-Every AI memory system currently in use stores memories as flat files — bullet points, text chunks, key-value pairs. These are retrieval systems, not memory systems. They answer "what did we store?" not "what is relevant, what connects, what has become important over time?"
+1. Persistent memory should work without a server.
+2. Retrieval should preserve relationships, not just chunks.
+3. Context injection should stay small and cacheable.
+4. Old memory should fade without losing provenance.
+5. The system should support both manual writes and automatic extraction from
+   conversation turns.
 
-Flat files fail in three specific ways:
-1. **No topology** — every fact has equal weight, nothing can become important through use
-2. **No maintenance** — updating one fact means rewriting everything; contradictions coexist silently
-3. **No emergence** — a "core memory" can't develop; importance must be pre-labeled at write time
+## System Overview
 
-The context window scaling bet (just make it bigger) doesn't fix this. It raises the ceiling on when the problem becomes painful. The architecture problem remains.
+At a high level, Dory has five layers:
 
----
+1. Storage: SQLite tables for nodes, edges, observations, compressed
+   observations, and FTS5 indexes.
+2. Graph model: in-memory `Graph` object for nodes, edges, salience, and
+   mutation.
+3. Retrieval: seed finding, spreading activation, and query routing across
+   semantic and episodic memory.
+4. Pipeline: `Observer`, `Prefixer`, `Decayer`, `Reflector`, and `Summarizer`.
+5. Interfaces: Python API, CLI, framework adapters, visualization, and MCP.
 
-## The Core Insight
+## Storage Layer
 
-The brain doesn't have a better hard drive. It has a better retrieval architecture.
+The backing store is a single SQLite database, defaulting to
+`~/.dory/engram.db`.
 
-**Neurons that fire together wire together** (Hebb, 1949). When two memories are active simultaneously, the connection between them strengthens. Importance emerges from connectivity — a memory becomes "core" not because it was labeled important, but because over time everything connects through it.
+Defined in `dory/store.py`, the schema includes:
 
-This is what Engram builds: a memory graph where salience is computed, not assigned, and retrieval is spreading activation, not lookup.
+- `nodes`: canonical memory records
+- `edges`: graph relationships between memories
+- `nodes_fts`: FTS5 index over node content and tags
+- `observations`: raw conversation turns
+- `compressed_obs`: compressed observation blocks for older history
 
----
+Important storage properties:
 
-## Architecture
+- SQLite runs in WAL mode so readers do not block writers.
+- Connections are cached per thread because `Observer` can extract in parallel.
+- FTS5 is always available; vector search is optional.
+- The graph is loaded into memory and persisted back to SQLite on save.
+
+## Data Model
 
 ### Node Types
 
-```
-ENTITY     — a person, place, or thing
-CONCEPT    — an abstract idea or domain
-EVENT      — something that happened at a point in time
-PREFERENCE — a stated or observed inclination
-BELIEF     — an assertion about the world, held with some confidence
-SESSION    — a conversation instance (anchor for co-occurrence edges)
-```
+Current node types are defined in `dory/schema.py`:
 
-Each node carries:
-- `id` — uuid
-- `type` — from above
-- `content` — natural language description
-- `created_at` — timestamp
-- `last_activated` — timestamp
-- `activation_count` — how many times spread has touched this node
-- `salience` — computed: f(connections, activation_count, recency)
+- `ENTITY`
+- `CONCEPT`
+- `EVENT`
+- `PREFERENCE`
+- `BELIEF`
+- `SESSION`
+- `PROCEDURE`
+- `SESSION_SUMMARY`
 
-### Edge Types
+Each node stores:
 
-Two classes of edges:
-
-**Explicit** — semantically labeled, created intentionally
-```
-WORKS_ON, BACKGROUND_IN, INTERESTED_IN, CAUSED, CONTRADICTS,
-PART_OF, INSTANCE_OF, TRIGGERED, PREFERS
-```
-
-**Implicit** — co-occurrence based, formed automatically
-```
-CO_OCCURS — X and Y appeared in the same session context
-           weight builds with each co-occurrence
-           decays if the two stop appearing together
-```
-
-Each edge carries:
-- `source_id`, `target_id`
-- `type` — from above
-- `weight` — 0.0 to 1.0, association strength
+- `id`
+- `type`
+- `content`
 - `created_at`
 - `last_activated`
 - `activation_count`
-- `decay_rate` — how fast weight drops without reinforcement
+- `salience`
+- `is_core`
+- `tags`
+- `zone`
+- `superseded_at`
+- `metadata`
+- `distinct_sessions`
 
-### Salience (computed, not assigned)
+### Edge Types
 
+Current edge types are:
+
+- Explicit semantic edges:
+  `WORKS_ON`, `BACKGROUND_IN`, `INTERESTED_IN`, `CAUSED`, `CONTRADICTS`,
+  `PART_OF`, `INSTANCE_OF`, `TRIGGERED`, `PREFERS`, `USES`, `RELATED_TO`
+- Provenance edge:
+  `SUPERSEDES`
+- Implicit associative edge:
+  `CO_OCCURS`
+- Episodic edges:
+  `TEMPORALLY_AFTER`, `TEMPORALLY_BEFORE`, `MENTIONS`, `SUPPORTS_FACT`
+
+Each edge stores:
+
+- `id`
+- `source_id`
+- `target_id`
+- `type`
+- `weight`
+- `created_at`
+- `last_activated`
+- `activation_count`
+- `decay_rate`
+
+### Visibility Zones
+
+Nodes move between three retrieval zones:
+
+- `active`: visible to normal retrieval
+- `archived`: hidden from default retrieval but kept for historical access
+- `expired`: hidden except for provenance and inspection
+
+Nothing is deleted as part of normal forgetting. Zone changes are reversible.
+
+## Graph Layer
+
+`dory/graph.py` implements the in-memory graph.
+
+Responsibilities:
+
+- load nodes and edges from SQLite
+- add and retrieve nodes and edges
+- enforce typed edge reinforcement for repeated links
+- recompute node salience
+- expose graph stats
+
+Salience is recomputed from:
+
+- connectivity: normalized degree in the graph
+- reinforcement: log-scaled `activation_count`
+- diversity: `distinct_sessions` dampens one-session overfitting
+- recency: exponential decay from `last_activated`
+
+This means memory importance is partly emergent from use, not only from write
+time labels.
+
+## Retrieval Architecture
+
+### Seed Finding
+
+`dory/activation.py` finds initial seed nodes in three stages:
+
+1. FTS5 BM25 search over node content and tags
+2. Optional vector KNN search if `sqlite-vec` and embeddings are available
+3. Substring fallback if neither returns useful results
+
+FTS queries are intentionally broadened with OR-style term expansion for recall.
+
+### Spreading Activation
+
+After seed selection, activation spreads through neighboring edges up to a fixed
+depth with depth decay:
+
+`received = source_activation * edge_weight * depth_decay`
+
+During spread:
+
+- only `active` nodes participate
+- activation accumulates across paths
+- touched nodes and traversed edges get their activation metadata updated
+
+The serialized result is a compact natural-language block containing:
+
+- top activated nodes
+- `[CORE]` markers for high-salience memories
+- `[CURRENT VALUE]` markers for nodes that supersede older values
+- relationship lines between activated nodes
+
+### Query Routing
+
+Dory does not use one retrieval mode for every question.
+
+`dory/session.py` routes a query into one of four modes using deterministic
+regex heuristics:
+
+- `graph`: stable facts, preferences, relationships
+- `episodic`: chronology, counting, relative-time, and event questions
+- `hybrid`: changes over time, preferences, cross-session evolution
+- `procedure`: workflow and how-to questions
+
+This is a major part of the current architecture. The retrieval path depends on
+the question type.
+
+### Episodic Retrieval
+
+For temporal and aggregation queries, Dory uses episodic memory instead of only
+semantic nodes.
+
+Key mechanisms:
+
+- `SESSION` nodes preserve chronological session context
+- `SESSION_SUMMARY` nodes provide compressed episodic summaries
+- `MENTIONS` and `SUPPORTS_FACT` edges connect summaries to semantic nodes
+- `salient_counts` in summary metadata let the model answer counting questions
+  from structured totals instead of recounting prose
+
+The retrieval formatter can aggregate counts across summaries before injecting
+them into the prompt.
+
+## Write Path
+
+### Manual Observation
+
+Manual writes go through `session.observe()` or `DoryMemory.observe()`.
+
+This path:
+
+1. sanitizes node content
+2. creates the node
+3. saves immediately so FTS stays current
+4. opportunistically links related nodes
+
+Manual writes are the simplest and most deterministic way to add memory.
+
+### Automatic Extraction with Observer
+
+`dory/pipeline/observer.py` is the extraction engine.
+
+It buffers conversation turns, logs raw observations, and periodically calls an
+LLM to extract durable nodes and edges.
+
+Current properties:
+
+- supports `ollama`, `anthropic`, and OpenAI-compatible backends
+- extraction is asynchronous via `ThreadPoolExecutor`
+- writes are serialized with a lock even when extraction calls run concurrently
+- low-confidence memories are filtered before graph insertion
+- extraction can attach `supersedes_hint` to support later knowledge updates
+- node `activation_count` is seeded from extraction confidence
+
+Observer is responsible for semantic memory creation, not full transcript
+preservation.
+
+## Prompt Construction
+
+`dory/pipeline/prefixer.py` builds context blocks with a split architecture:
+
+- stable prefix: core memories plus top non-core high-salience facts
+- dynamic suffix: per-query retrieval and recent observations
+
+Why this exists:
+
+- full RAG-style reinjection changes every prompt and kills cache reuse
+- a stable prefix enables prompt caching in Anthropic and repeated-prefix reuse
+  in OpenAI-compatible APIs
+
+The prefix is cached and invalidated only when graph state changes
+meaningfully.
+
+## Consolidation Pipeline
+
+`DoryMemory.flush()` ends a session by combining extraction and consolidation.
+
+The consolidation pipeline currently runs through `dory/consolidation.py` and
+the pipeline modules it invokes.
+
+### 1. Edge Decay and Pruning
+
+`consolidation.decay()` and `consolidation.prune()`:
+
+- decay edge weights based on time since last activation
+- remove very weak edges
+
+### 2. Core Promotion and Demotion
+
+`consolidation.promote_core()` and `consolidation.demote_core()`:
+
+- promote high-salience nodes to core memory
+- demote stale core nodes
+
+### 3. Node Zone Management
+
+`dory/pipeline/decayer.py` scores each node using:
+
+- recency
+- frequency
+- relevance proxy from salience
+
+Then moves nodes between `active`, `archived`, and `expired`.
+
+Core memories get partial protection through lower archival thresholds.
+
+### 4. Reflection
+
+`dory/pipeline/reflector.py` performs maintenance that changes the meaning of
+the graph, not just its weights:
+
+- near-duplicate merge
+- supersession detection for updated facts
+- optional compression of older observations
+- behavioral preference synthesis
+
+Supersession is the key provenance mechanism. Older facts are archived and linked
+with `SUPERSEDES` instead of being overwritten.
+
+### 5. Session Summarization
+
+If a summarizer is attached, the session can also be compressed into a
+`SESSION_SUMMARY` node with:
+
+- narrative summary
+- topics
+- `salient_counts`
+- session date
+
+This layer improves temporal reasoning, session recall, and cross-session
+counting.
+
+## Interfaces
+
+### Python API
+
+`DoryMemory` in `dory/memory.py` is the main high-level API.
+
+It exposes:
+
+- `observe()`
+- `add_turn()`
+- `query()`
+- `build_context()`
+- `flush()`
+- async variants of all major methods
+- direct graph access for power users
+
+### CLI
+
+`dory_cli.py` exposes:
+
+- `query`
+- `observe`
+- `link`
+- `list`
+- `show`
+- `visualize`
+- `consolidate`
+- `review-session`
+
+`review-session` is specialized for Claude Code transcripts and runs them back
+through `Observer`.
+
+`visualize` now defaults to a local-only HTML fallback view. Remote D3.js is an
+explicit opt-in for the fully interactive graph.
+
+### MCP Server
+
+`dory/mcp_server.py` exposes five tools:
+
+- `dory_query`
+- `dory_observe`
+- `dory_consolidate`
+- `dory_visualize`
+- `dory_stats`
+
+This is the bridge for Claude Code and other MCP-compatible clients.
+
+### Adapters
+
+The `adapters/` package provides integrations for:
+
+- LangChain
+- LangGraph
+- multi-agent shared memory
+
+## Operational Model
+
+A typical session looks like this:
+
+1. Query memory at session start or topic switch.
+2. Inject prefix and suffix into the model prompt.
+3. Log new conversation turns as they happen.
+4. Extract durable memories asynchronously in the background.
+5. Flush at the end of the session.
+6. Decay stale memory, resolve conflicts, and optionally summarize the session.
+
+## Tradeoffs
+
+This architecture makes a few deliberate tradeoffs:
+
+- SQLite over a service stack:
+  simpler deployment, lower ops cost, weaker horizontal scaling
+- Graph retrieval over pure vector search:
+  better relationship handling, more hand-tuned heuristics
+- Query routing over one universal retriever:
+  more control, more maintenance burden
+- Provenance through supersession and zones over deletion:
+  better historical reasoning, more graph complexity
+- Cacheable prefix over full dynamic context:
+  cheaper and more stable prompts, but requires careful invalidation
+
+## Module Map
+
+Current package layout:
+
+```text
+dory/
+├── activation.py        # seed finding, spreading activation, serialization
+├── consolidation.py     # top-level consolidation orchestration
+├── graph.py             # in-memory graph model and salience
+├── memory.py            # high-level public API
+├── mcp_server.py        # MCP tool server
+├── sanitize.py          # content cleanup for writes
+├── schema.py            # node/edge types and dataclasses
+├── session.py           # retrieval routing and write helpers
+├── store.py             # SQLite schema and persistence
+├── visualize.py         # HTML graph visualization
+├── adapters/            # LangChain, LangGraph, multi-agent
+├── export/              # JSON-LD export/import
+└── pipeline/
+    ├── observer.py      # LLM extraction from turns
+    ├── prefixer.py      # stable prefix + dynamic suffix builder
+    ├── decayer.py       # node visibility-zone management
+    ├── reflector.py     # deduplication and supersession
+    └── summarizer.py    # episodic session summaries
 ```
-salience(node) =
-    α × (degree / max_degree)          # connectivity
-  + β × log(activation_count + 1)     # reinforcement
-  + γ × recency_score(last_activated) # recency
-```
 
-Where α + β + γ = 1.0, tunable per use case.
+## What This Document Intentionally Does Not Claim
 
-A node becomes "core" when its salience crosses a threshold — emergent from use, not pre-labeled.
+This is a code-aligned architecture doc, not a research claim.
 
----
+It does not assume:
 
-## Retrieval: Spreading Activation
+- that every retrieval path is optimal
+- that vector search is always enabled
+- that behavioral synthesis is always desirable
+- that the benchmark pipeline and the runtime library are the same thing
 
-Standard graph traversal won't work. We use spreading activation — the mechanism proposed by Collins & Loftus (1975) for semantic memory, adapted here for AI companion context.
-
-```
-1. Seed nodes — derive from current session content
-   (NLP extraction or explicit tagging)
-
-2. Spread — each seed node broadcasts activation to neighbors
-   activation_received = source_activation × edge_weight × depth_decay
-
-3. Accumulate — nodes can receive activation from multiple paths,
-   values sum (with ceiling)
-
-4. Threshold — return all nodes above activation threshold,
-   sorted descending
-
-5. Serialize — activated subgraph → natural language summary
-   for context injection
-```
-
-Depth decay prevents the entire graph from lighting up. Default: 0.5 per hop.
-
----
-
-## Consolidation (Forgetting as a Feature)
-
-Runs periodically (e.g., end of session, or on a schedule):
-
-1. **Strengthen** — edges traversed frequently get weight += reinforcement_delta
-2. **Decay** — all edges lose weight × decay_rate since last activation
-3. **Prune** — edges below minimum weight threshold are removed
-4. **Promote** — nodes crossing salience threshold are flagged as core
-5. **Demote** — core nodes whose salience drops below threshold lose the flag
-
-This is the biological solution to the frame problem: strategic forgetting.
-The system doesn't maintain every memory against every new fact —
-it lets low-salience connections fade and high-salience ones strengthen.
-
----
-
-## Module Plan
-
-```
-Engram/
-├── planning.md          ← this file
-├── engram/
-│   ├── __init__.py
-│   ├── graph.py         ← core graph: nodes, edges, CRUD
-│   ├── activation.py    ← spreading activation engine
-│   ├── consolidation.py ← decay, strengthen, prune, promote
-│   ├── session.py       ← session interface: load context, integrate observations
-│   ├── schema.py        ← node/edge types, validation
-│   └── store.py         ← JSON persistence layer
-└── tests/
-    ├── test_graph.py
-    ├── test_activation.py
-    └── test_consolidation.py
-```
-
----
-
-## Implementation Phases
-
-**Phase 1 — Core graph**
-- Node and edge CRUD
-- JSON persistence
-- Basic salience computation
-
-**Phase 2 — Activation engine**
-- Spreading activation from seed nodes
-- Depth decay
-- Threshold filtering and sorting
-
-**Phase 3 — Consolidation**
-- Edge decay over time
-- Strengthening on activation
-- Core memory promotion/demotion
-
-**Phase 4 — Session interface**
-- Session start: extract seeds from context, run activation, serialize output
-- Session end: parse new observations, form implicit co-occurrence edges, run consolidation
-
-**Phase 5 — Implicit edge formation**
-- Co-occurrence detection across a session
-- Automatic edge creation and weight updates
-- This is the hardest phase — requires reasoning about what "same context" means
-
----
-
-## Open Questions
-
-1. **Seed extraction** — how do we derive seed nodes from raw conversation text? Keyword extraction, NER, or an LLM call to identify relevant entities?
-
-2. **Implicit edge granularity** — do SESSION nodes connect everything mentioned in a session to each other? That may over-connect. What's the right granularity for co-occurrence?
-
-3. **Serialization format** — when injecting activated subgraph into context, do we output structured data, natural language, or a hybrid? Model comprehension depends heavily on this.
-
-4. **Cold start** — new companion with empty graph. How do we bootstrap? Explicit onboarding, or let the graph build naturally from first sessions?
-
-5. **Multi-companion** — one graph per companion instance, or a shared substrate with companion-scoped edges?
-
-6. **Contradiction handling** — when a new observation conflicts with an existing belief node, do we: add a CONTRADICTS edge, update the existing node, create a new node and let salience arbitrate?
-
-7. **Salience weights (α, β, γ)** — what are the right defaults? Probably use-case dependent. Needs empirical tuning.
-
----
-
-## Why This Is Different
-
-| Capability | Flat file | Vector DB + RAG | Engram |
-|---|---|---|---|
-| Update single fact | Rewrite file | Reindex chunk | Update one node |
-| Relationship traversal | No | No | Yes |
-| Importance emerges from use | No | No | Yes |
-| Contradiction detection | No | No | Yes (CONTRADICTS edge) |
-| Strategic forgetting | No | No | Yes (consolidation) |
-| Contextual retrieval | Keyword | Semantic similarity | Spreading activation |
-| Provenance tracking | No | Partial | Yes (edge metadata) |
-| Core memory | Manual label | Manual label | Computed salience |
-
----
-
-*Named for the engram — the hypothetical physical trace a memory leaves in neural tissue. First proposed by Richard Semon (1904). Still not fully understood. That feels right.*
+Those are active tuning areas. This document describes the moving parts that
+exist today so future changes can be reasoned about against the real system.

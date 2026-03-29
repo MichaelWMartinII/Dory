@@ -17,7 +17,7 @@ print(mem.query("what does the user prefer for inference?"))
 # → MLX (updated preference, supersedes llama.cpp)
 ```
 
-**LongMemEval (500q, oracle split):** 80.6% with Claude Code MCP backend / 79.8% with direct Sonnet API.
+**LongMemEval (500q, oracle split):** 79.6% on the current v0.5 Claude Code MCP run; 80.6% on the v0.4 MCP run.
 
 ---
 
@@ -71,12 +71,15 @@ mem.flush()
 
 # See your graph in the browser
 mem.visualize()
+# Or explicitly opt into the remote D3 interactive view
+mem.visualize(allow_remote_js=True)
 ```
 
 Or from the command line:
 
 ```bash
-dory visualize          # opens graph in browser
+dory visualize                    # local-only fallback view, no remote JS
+dory visualize --remote-assets    # full interactive D3 view
 dory show               # print stats + core memories
 dory query "topic"      # spreading activation from the terminal
 ```
@@ -142,13 +145,18 @@ Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_
 
 ---
 
-## Interactive demo
+## Visualization
 
 **[Live graph visualization →](https://michaelwmartinii.github.io/Dory/demo.html)**
 
 ![Dory memory graph demo](https://raw.githubusercontent.com/MichaelWMartinII/Dory/main/docs/demo.gif)
 
-Force-directed knowledge graph with spreading activation query mode, edge type coloring, archived/superseded nodes, and session summary chain.
+The hosted demo uses the fully interactive D3 view.
+
+Locally, generated visualizations now default to a local-only fallback page that
+shows the full node and edge data without loading remote JavaScript. If you want
+the old interactive graph locally, opt in with `allow_remote_js=True` or
+`dory visualize --remote-assets`.
 
 ---
 
@@ -218,6 +226,14 @@ exporter = JSONLDExporter(graph)
 exporter.export("memory.jsonld.json")
 JSONLDExporter.import_into(graph, "memory.jsonld.json")
 ```
+
+### Security notes
+
+Security and hardening guidance lives in:
+
+- `SECURITY.md`
+- `docs/HARDENING_2026-03-29.md`
+- `docs/REPO_CLEANUP_2026-03-29.md`
 
 ---
 
@@ -387,24 +403,19 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
 | v0.1 | Haiku | Haiku | 500 | 54.4% |
 | v0.1 | Sonnet | Sonnet | 500 | 66.8% |
 | v0.3 | Sonnet | Sonnet (direct API) | 500 | 79.8% |
-| **v0.4** | **Haiku** | **Claude Code (MCP)** | **500** | **80.6%** |
-| **v0.5** | **Haiku** | **Claude Code (MCP)** | **30*** | **90.0% temporal** |
+| v0.4 | Haiku | Claude Code (MCP) | 500 | 80.6% |
+| **v0.5** | **Haiku** | **Claude Code (MCP)** | **500** | **79.6%** |
 
-\* v0.5 temporal spot check (30 questions, temporal-reasoning category only). Full 500q run pending.
+v0.5 is statistically flat versus v0.4 overall, but the category movement is
+the real story:
 
-Per-category (v0.3 vs v0.4):
+- temporal reasoning improved after explicit reference-date anchoring
+- knowledge-update regressed due to date-override failures and reflector changes
 
-| Category | v0.3 Sonnet | v0.4 Claude Code MCP | Δ | n |
-|---|---|---|---|---|
-| knowledge-update | 84.6% | **89.7%** | +5.1 | 78 |
-| multi-session | 80.5% | 79.7% | -0.8 | 133 |
-| single-session-assistant | 87.5% | 83.9% | -3.6 | 56 |
-| single-session-preference | 46.7% | **63.3%** | **+16.6** | 30 |
-| single-session-user | 88.6% | **92.9%** | +4.3 | 70 |
-| temporal-reasoning | 75.9% | 72.2% | -3.7 | 133 |
-| **Overall** | **79.8%** | **80.6%** | **+0.8** | **500** |
+Full writeups:
 
-The 0.8pp overall difference is within the noise floor (±3.5pp binomial CI on 500 questions). The category-level results are the meaningful signal — in particular, single-session-preference (+16.6pp) is consistent across two independent runs. Full methodology and failure analysis: [`benchmarks/REPORT_claudecode_mcp_v04.md`](benchmarks/REPORT_claudecode_mcp_v04.md).
+- [`benchmarks/REPORT_claudecode_mcp_v04.md`](benchmarks/REPORT_claudecode_mcp_v04.md)
+- [`benchmarks/README.md`](benchmarks/README.md)
 
 Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
 
@@ -414,45 +425,14 @@ Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
 
 ---
 
-## Roadmap
+## Current priorities
 
-**v0.1**
-- [x] MCP server — `dory_query`, `dory_observe`, `dory_consolidate`, `dory_visualize`, `dory_stats`
-- [x] LangChain adapter — `DoryMemoryAdapter` implements `BaseMemory`
-- [x] LangGraph adapter — `DoryMemoryNode` for StateGraph integration
-- [x] Procedural memory — `PROCEDURE` node type
-- [x] Multi-agent shared memory — `SharedMemoryPool` with thread-safe writes
-- [x] JSON-LD export/import
+The next engineering priorities are:
 
-**v0.2**
-- [x] Episodic layer — `SESSION_SUMMARY` nodes with `salient_counts` metadata
-- [x] Retrieval fusion — three-mode routing (graph / episodic / hybrid)
-- [x] Behavioral preference synthesis — `Reflector` synthesizes PREFERENCE nodes from repeated patterns without LLM calls
-
-**v0.3**
-- [x] 79.8% on LongMemEval full 500-question run (Sonnet)
-- [x] Temporal arithmetic prompt — step-by-step date math before answering
-- [x] Count cross-validation via `salient_counts`
-- [x] Graph topology demo — `demo_topology.py`
-- [x] Ollama demo — `demo_ollama.py`, fully local, no API key required
-
-**v0.4**
-- [x] 80.6% on LongMemEval full 500-question run (Claude Code MCP backend)
-- [x] `--answer-backend claude-code-mcp` benchmark option — Claude Code queries Dory autonomously via MCP
-- [x] Preference context improvements — FTS-ranked retrieval, deduplication, event elevation
-- [x] Extended PREFERENCE extraction guidance in Observer
-
-**v0.5**
-- [x] Observer async extraction — `ThreadPoolExecutor`, LLM calls parallel, writes serialized; `flush()` is sync point
-- [x] Temporal date-anchoring — `REFERENCE DATE:` at top of MCP system prompt; inclusive day-counting rule
-- [x] Confidence-seeded `activation_count` — high-confidence extractions start with higher salience, decay slower
-- [x] Session diversity weighting — `distinct_sessions` field; cross-session nodes score higher than single-session enthusiasm
-- [x] Archived node isolation — archived nodes no longer surface in `dory_query` results
-- [x] Removed behavioral synthesis noise — `Reflector` keyword-synthesis disabled; signal handled structurally
-
-**v0.6 (planned)**
-- [ ] Full 500q benchmark run with v0.5 pipeline
-- [ ] Multi-session counting improvements
+- fix reference-date override failures in duration calculations
+- restore targeted knowledge-update synthesis without reintroducing noisy preference synthesis
+- improve multi-session counting
+- keep the docs and benchmark surface aligned with the shipped code
 
 ---
 

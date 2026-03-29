@@ -1,12 +1,15 @@
 """
-live_chat.py — Dory live memory demo
+live_chat_legacy.py — archived Dory live memory demo
 
 Jolene (played by Claude) has a conversation with Elwin in Session 1.
 Dory extracts memories. Session 2 starts fresh — only Dory's memory
 carries the context forward.
 
+Archived on 2026-03-29 because it depends on local-only infrastructure and is
+not part of the supported example surface.
+
 Usage:
-    python examples/live_chat.py
+    python examples/archive/live_chat_legacy.py
 """
 
 from __future__ import annotations
