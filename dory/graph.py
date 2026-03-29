@@ -25,6 +25,8 @@ class Graph:
         self.path = path
         self._nodes: dict[str, Node] = {}
         self._edges: dict[str, Edge] = {}
+        self._deleted_node_ids: set[str] = set()
+        self._deleted_edge_ids: set[str] = set()
         self._dirty: bool = False
         self._lock = threading.RLock()
         self._load()
@@ -33,6 +35,8 @@ class Graph:
         data = store.load(self.path)
         self._nodes = {n["id"]: Node.from_dict(n) for n in data.get("nodes", [])}
         self._edges = {e["id"]: Edge.from_dict(e) for e in data.get("edges", [])}
+        self._deleted_node_ids.clear()
+        self._deleted_edge_ids.clear()
         self._dirty = False
 
     def save(self) -> None:
@@ -44,9 +48,13 @@ class Graph:
                 {
                     "nodes": [n.to_dict() for n in self._nodes.values()],
                     "edges": [e.to_dict() for e in self._edges.values()],
+                    "deleted_node_ids": sorted(self._deleted_node_ids),
+                    "deleted_edge_ids": sorted(self._deleted_edge_ids),
                 },
                 self.path,
             )
+            self._deleted_node_ids.clear()
+            self._deleted_edge_ids.clear()
 
     # --- Nodes ---
 
@@ -141,6 +149,31 @@ class Graph:
 
     def all_edges(self) -> list[Edge]:
         return list(self._edges.values())
+
+    def remove_edge(self, edge_id: str) -> bool:
+        with self._lock:
+            if edge_id not in self._edges:
+                return False
+            del self._edges[edge_id]
+            self._deleted_edge_ids.add(edge_id)
+            self._dirty = True
+            return True
+
+    def remove_node(self, node_id: str, remove_incident_edges: bool = True) -> bool:
+        with self._lock:
+            if node_id not in self._nodes:
+                return False
+            if remove_incident_edges:
+                incident = [
+                    eid for eid, edge in self._edges.items()
+                    if edge.source_id == node_id or edge.target_id == node_id
+                ]
+                for eid in incident:
+                    self.remove_edge(eid)
+            del self._nodes[node_id]
+            self._deleted_node_ids.add(node_id)
+            self._dirty = True
+            return True
 
     # --- Salience ---
 

@@ -217,7 +217,12 @@ class DoryMemory:
     # Power-user access
     # ------------------------------------------------------------------
 
-    def visualize(self, output_path: "Path | None" = None, open_browser: bool = True) -> "Path":
+    def visualize(
+        self,
+        output_path: "Path | None" = None,
+        open_browser: bool = True,
+        allow_remote_js: bool = False,
+    ) -> "Path":
         """
         Open an interactive D3.js visualization of the current memory graph.
 
@@ -227,11 +232,19 @@ class DoryMemory:
             Where to save the HTML file. Defaults to a temp file.
         open_browser : bool
             Open the file in the default browser immediately (default True).
+        allow_remote_js : bool
+            If True, load remote D3.js and enable the full interactive graph.
+            Default False generates a local-only fallback view with node/edge data.
 
         Returns the path to the generated HTML file.
         """
         from .visualize import open_visualization
-        return open_visualization(self._graph, output_path=output_path, open_browser=open_browser)
+        return open_visualization(
+            self._graph,
+            output_path=output_path,
+            open_browser=open_browser,
+            allow_remote_js=allow_remote_js,
+        )
 
     def close(self) -> None:
         """Release resources held by this DoryMemory instance."""

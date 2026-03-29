@@ -121,11 +121,11 @@ def dory_consolidate() -> str:
 @mcp.tool()
 def dory_visualize(include_archived: bool = False) -> str:
     """
-    Generate an interactive knowledge graph visualization and open it in a browser.
+    Generate a knowledge graph visualization and open it in a browser.
 
-    Creates a self-contained HTML file with a D3.js force-directed layout showing
-    all memory nodes, their types, salience scores, edges, and relationships.
-    Core memories are highlighted. Click any node to inspect its details.
+    Creates a self-contained HTML file showing all memory nodes, their types,
+    salience scores, edges, and relationships. By default this is a local-only
+    fallback view; remote D3.js is not loaded from the MCP surface.
 
     Args:
         include_archived: If True, also show archived (decayed) nodes in addition

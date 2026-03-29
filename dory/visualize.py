@@ -86,15 +86,29 @@ def render_html(
     graph: Graph,
     zones: list[str] | None = None,
     demo_queries: list | None = None,
+    allow_remote_js: bool = False,
 ) -> str:
     if zones is None:
         zones = [ZONE_ACTIVE]
     data  = _build_graph_data(graph, zones)
     stats = graph.stats()
     html  = _HTML_TEMPLATE
-    html  = html.replace("__GRAPH_DATA__",    json.dumps(data))
-    html  = html.replace("__GRAPH_STATS__",   json.dumps(stats))
-    html  = html.replace("__DEMO_QUERIES__",  json.dumps(demo_queries or []))
+    html  = html.replace(
+        "__GRAPH_DATA__",
+        json.dumps(data).replace("</", "<\\/"),
+    )
+    html  = html.replace(
+        "__GRAPH_STATS__",
+        json.dumps(stats).replace("</", "<\\/"),
+    )
+    html  = html.replace(
+        "__DEMO_QUERIES__",
+        json.dumps(demo_queries or []).replace("</", "<\\/"),
+    )
+    html  = html.replace(
+        "__D3_SCRIPT_TAG__",
+        '<script src="https://d3js.org/d3.v7.min.js"></script>' if allow_remote_js else "",
+    )
     return html
 
 
@@ -104,9 +118,10 @@ def open_visualization(
     zones: list[str] | None = None,
     open_browser: bool = True,
     demo_queries: list | None = None,
+    allow_remote_js: bool = False,
 ) -> Path:
     """Generate the HTML visualization and optionally open it in a browser."""
-    html = render_html(graph, zones, demo_queries)
+    html = render_html(graph, zones, demo_queries, allow_remote_js=allow_remote_js)
     if output_path is None:
         fd, tmp = tempfile.mkstemp(suffix=".html", prefix="dory_graph_")
         os.close(fd)
@@ -126,7 +141,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <title>Dory Memory Graph</title>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+__D3_SCRIPT_TAG__
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -432,6 +447,55 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     overflow: hidden;
   }
 
+  #offline-notice {
+    display: none;
+    margin: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #30363d;
+    background: #161b22;
+    color: #c9d1d9;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  #offline-notice strong { color: #f0f6fc; }
+  #offline-notice code { color: #58a6ff; }
+
+  #fallback-view {
+    display: none;
+    padding: 16px;
+    overflow-y: auto;
+    height: calc(100vh - 52px);
+  }
+
+  .fallback-section {
+    margin-bottom: 18px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .fallback-section h3 {
+    font-size: 12px;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 10px;
+  }
+
+  .fallback-row {
+    padding: 8px 0;
+    border-top: 1px solid #21262d;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .fallback-row:first-child { border-top: none; padding-top: 0; }
+  .fallback-type { color: #58a6ff; font-size: 11px; }
+  .fallback-meta { color: #8b949e; font-size: 11px; }
+
   svg {
     width: 100%;
     height: 100%;
@@ -574,6 +638,8 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div id="search-bar">
     <input id="search-input" type="text" placeholder="Search nodes…">
   </div>
+  <div id="offline-notice"></div>
+  <div id="fallback-view"></div>
   <div id="tooltip">
     <div class="tt-type" id="tt-type"></div>
     <div class="tt-content" id="tt-content"></div>
@@ -585,6 +651,74 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 const RAW_DATA    = __GRAPH_DATA__;
 const RAW_STATS   = __GRAPH_STATS__;
 const DEMO_QUERIES = __DEMO_QUERIES__;
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderFallbackView() {
+  document.getElementById("graph-svg").style.display = "none";
+  document.getElementById("tooltip").style.display = "none";
+  document.getElementById("query-panel").style.display = "none";
+  document.getElementById("legend").style.display = "none";
+  document.getElementById("edge-legend").style.display = "none";
+  document.getElementById("zone-controls").style.display = "none";
+
+  const notice = document.getElementById("offline-notice");
+  notice.style.display = "block";
+  notice.innerHTML =
+    "<strong>Local-only mode</strong><br>" +
+    "Interactive graph rendering is disabled because this HTML was generated without remote JavaScript. " +
+    "The full node and edge data are still available below. " +
+    "Regenerate with <code>allow_remote_js=True</code> if you explicitly want the remote D3 view.";
+
+  const fallback = document.getElementById("fallback-view");
+  fallback.style.display = "block";
+
+  const nodeRows = RAW_DATA.nodes
+    .map(n => `
+      <div class="fallback-row">
+        <div class="fallback-type">${escapeHtml(n.type)}${n.is_core ? " [CORE]" : ""}</div>
+        <div>${escapeHtml(n.full)}</div>
+        <div class="fallback-meta">zone=${escapeHtml(n.zone)} · salience=${escapeHtml(n.salience)} · activations=${escapeHtml(n.activation_count)}</div>
+      </div>`)
+    .join("");
+
+  const edgeRows = RAW_DATA.links
+    .map(e => `
+      <div class="fallback-row">
+        <div class="fallback-type">${escapeHtml(e.type)}</div>
+        <div>${escapeHtml(e.source)} → ${escapeHtml(e.target)}</div>
+        <div class="fallback-meta">weight=${escapeHtml(e.weight)}</div>
+      </div>`)
+    .join("");
+
+  fallback.innerHTML = `
+    <div class="fallback-section">
+      <h3>Nodes (${RAW_DATA.nodes.length})</h3>
+      ${nodeRows || '<div class="fallback-row">No nodes.</div>'}
+    </div>
+    <div class="fallback-section">
+      <h3>Edges (${RAW_DATA.links.length})</h3>
+      ${edgeRows || '<div class="fallback-row">No edges.</div>'}
+    </div>`;
+
+  document.getElementById("detail-content").innerHTML =
+    '<span style="color:#8b949e">Local-only fallback view. The interactive graph is disabled.</span>';
+}
+
+if (!window.d3) {
+  document.getElementById("s-nodes").textContent    = RAW_STATS.nodes      ?? 0;
+  document.getElementById("s-edges").textContent    = RAW_STATS.edges      ?? 0;
+  document.getElementById("s-core").textContent     = RAW_STATS.core_nodes ?? 0;
+  document.getElementById("s-archived").textContent = RAW_STATS.archived   ?? 0;
+  renderFallbackView();
+} else {
 
 // Populate stats
 document.getElementById("s-nodes").textContent    = RAW_STATS.nodes      ?? 0;
@@ -999,6 +1133,7 @@ window.highlightById = function(id) {
   const linksCopy = linkSel ? linkSel.data() : [];
   selectNode(d, nodeGroup, linksCopy, nodeMap);
 };
+}
 </script>
 </body>
 </html>

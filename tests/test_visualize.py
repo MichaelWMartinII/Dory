@@ -30,12 +30,21 @@ def test_render_html_empty_graph(graph):
     assert len(html) > 100
 
 
-def test_render_html_includes_d3(graph):
+def test_render_html_safe_default_omits_remote_d3(graph):
     from dory.visualize import render_html
 
     graph.add_node(NodeType.CONCEPT, "spreading activation")
     html = render_html(graph, zones=["active"])
-    assert "d3" in html.lower()
+    assert "https://d3js.org/d3.v7.min.js" not in html
+    assert "Local-only mode" in html
+
+
+def test_render_html_remote_mode_includes_d3(graph):
+    from dory.visualize import render_html
+
+    graph.add_node(NodeType.CONCEPT, "spreading activation")
+    html = render_html(graph, zones=["active"], allow_remote_js=True)
+    assert "https://d3js.org/d3.v7.min.js" in html
 
 
 def test_open_visualization_writes_file(tmp_path, graph):

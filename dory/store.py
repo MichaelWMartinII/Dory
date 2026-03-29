@@ -139,21 +139,20 @@ def load(path: Path = DEFAULT_GRAPH_PATH) -> dict:
 def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
     conn = _connect(path)
 
-    # Remove nodes and edges that are no longer in the in-memory graph
-    node_ids = [n["id"] for n in data.get("nodes", [])]
-    edge_ids = [e["id"] for e in data.get("edges", [])]
-    if node_ids:
+    # Apply only explicit deletions tracked by the caller.
+    # This avoids wiping rows written by another process or a stale Graph instance.
+    deleted_node_ids = list(data.get("deleted_node_ids", []))
+    deleted_edge_ids = list(data.get("deleted_edge_ids", []))
+    if deleted_edge_ids:
         conn.execute(
-            f"DELETE FROM nodes WHERE id NOT IN ({','.join('?'*len(node_ids))})", node_ids
+            f"DELETE FROM edges WHERE id IN ({','.join('?'*len(deleted_edge_ids))})",
+            deleted_edge_ids,
         )
-    else:
-        conn.execute("DELETE FROM nodes")
-    if edge_ids:
+    if deleted_node_ids:
         conn.execute(
-            f"DELETE FROM edges WHERE id NOT IN ({','.join('?'*len(edge_ids))})", edge_ids
+            f"DELETE FROM nodes WHERE id IN ({','.join('?'*len(deleted_node_ids))})",
+            deleted_node_ids,
         )
-    else:
-        conn.execute("DELETE FROM edges")
 
     for n in data.get("nodes", []):
         tags = n["tags"] if isinstance(n.get("tags"), list) else json.loads(n.get("tags") or "[]")
@@ -211,14 +210,16 @@ def save(data: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
             ),
         )
 
-    # Rebuild FTS index
+    # Rebuild FTS index from the full DB state, not just the caller's snapshot.
+    # This keeps FTS correct even when multiple Graph instances save concurrently.
     conn.execute("DELETE FROM nodes_fts")
-    for n in data.get("nodes", []):
-        raw_tags = n.get("tags") or []
+    rows = conn.execute("SELECT id, content, tags FROM nodes").fetchall()
+    for row in rows:
+        raw_tags = row["tags"] or "[]"
         tags_list = raw_tags if isinstance(raw_tags, list) else json.loads(raw_tags)
         conn.execute(
             "INSERT INTO nodes_fts (id, content, tags) VALUES (?,?,?)",
-            (n["id"], n["content"], " ".join(tags_list)),
+            (row["id"], row["content"], " ".join(tags_list)),
         )
 
     conn.commit()
@@ -265,10 +266,17 @@ def write_observation(
 ) -> None:
     """Append a raw turn to the episodic observation log."""
     from .schema import now_iso
+    from .sanitize import sanitize_observation
+
+    sanitized = sanitize_observation(content)
+    stored_content = sanitized.content
+    if sanitized.flagged and "injection:" in sanitized.reason:
+        stored_content = f"[FLAGGED_OBSERVATION {sanitized.reason}]"
+
     conn = _connect(path)
     conn.execute(
         "INSERT OR IGNORE INTO observations (id, session_id, role, content, created_at) VALUES (?,?,?,?,?)",
-        (obs_id, session_id, role, content, created_at or now_iso()),
+        (obs_id, session_id, role, stored_content, created_at or now_iso()),
     )
     conn.commit()
 

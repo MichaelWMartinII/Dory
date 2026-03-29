@@ -37,7 +37,7 @@ def prune(graph: Graph, min_weight: float = 0.05) -> int:
     """Remove edges that have decayed below the minimum weight."""
     to_remove = [eid for eid, e in graph._edges.items() if e.weight < min_weight]
     for eid in to_remove:
-        del graph._edges[eid]
+        graph.remove_edge(eid)
     return len(to_remove)
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import os
 from collections import deque
 from pathlib import Path
 
@@ -22,8 +23,10 @@ from dory.schema import EdgeType, NodeType, ZONE_ACTIVE, ZONE_ARCHIVED, now_iso
 
 # ── Build demo graph ──────────────────────────────────────────────────────────
 
-_tmp = Path(tempfile.mktemp(suffix=".db"))
-g = Graph(_tmp)
+fd, tmp = tempfile.mkstemp(suffix=".db")
+os.close(fd)
+Path(tmp).unlink(missing_ok=True)
+g = Graph(Path(tmp))
 
 # Entities
 user       = g.add_node(NodeType.ENTITY, "Michael — solo developer, Murfreesboro TN", tags=["user"])

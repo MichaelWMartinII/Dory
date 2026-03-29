@@ -250,9 +250,9 @@ class Reflector:
             to_remove_edges = [eid for eid, e in self.graph._edges.items()
                                if e.source_id == e.target_id]
             for eid in to_remove_edges:
-                del self.graph._edges[eid]
+                self.graph.remove_edge(eid)
 
-            del self.graph._nodes[drop.id]
+            self.graph.remove_node(drop.id, remove_incident_edges=False)
             archived_ids.add(drop.id)
             merged += 1
 

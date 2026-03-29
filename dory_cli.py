@@ -107,6 +107,7 @@ def cmd_visualize(args, graph: Graph) -> None:
         output_path=args.output,
         zones=zones,
         open_browser=not args.no_open,
+        allow_remote_js=args.remote_assets,
     )
     print(f"Visualization saved to: {output_path}")
 
@@ -311,6 +312,7 @@ def main() -> None:
     p_viz.add_argument("--archived", action="store_true", help="Include archived nodes")
     p_viz.add_argument("--expired",  action="store_true", help="Include expired nodes")
     p_viz.add_argument("--no-open",  action="store_true", help="Save the file but don't open the browser")
+    p_viz.add_argument("--remote-assets", action="store_true", help="Allow remote D3.js for the fully interactive graph view")
 
     # consolidate
     sub.add_parser("consolidate", help="Run end-of-session consolidation")
