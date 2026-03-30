@@ -17,7 +17,7 @@ print(mem.query("what does the user prefer for inference?"))
 # → MLX (updated preference, supersedes llama.cpp)
 ```
 
-**LongMemEval (500q, oracle split):** 79.6% on the current v0.5 Claude Code MCP run; 80.6% on the v0.4 MCP run.
+**LongMemEval (500q, oracle split):** 84.0% on the v0.6 Claude Code MCP run — new best across all versions.
 
 ---
 
@@ -381,7 +381,7 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
     └─[WORKS_ON]──▶
   ● [ENTITY]     Dory — agent memory library
     └─[CO_OCCURS]──▶
-  ● [EVENT]      [2026-03-28] v0.5 temporal spot check — 90.0% temporal-reasoning
+  ● [EVENT]      [2026-03-30] v0.6 full benchmark — 84.0% LongMemEval (new best)
 
   ✗ Flat search: returns both endpoints as separate results. No connecting path.
 ```
@@ -407,18 +407,18 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
 | v0.1 | Sonnet | Sonnet | 500 | 66.8% |
 | v0.3 | Sonnet | Sonnet (direct API) | 500 | 79.8% |
 | v0.4 | Haiku | Claude Code (MCP) | 500 | 80.6% |
-| **v0.5** | **Haiku** | **Claude Code (MCP)** | **500** | **79.6%** |
+| v0.5 | Haiku | Claude Code (MCP) | 500 | 79.6% |
+| **v0.6** | **Haiku** | **Claude Code (MCP)** | **500** | **84.0%** |
 
-v0.5 is statistically flat versus v0.4 overall, but the category movement is
-the real story:
+v0.6 improved every category. The biggest gains:
 
-- temporal reasoning improved after explicit reference-date anchoring
-- knowledge-update regressed due to date-override failures and reflector changes
+| Category | v0.5 | v0.6 | Δ |
+|---|---|---|---|
+| knowledge-update | 78.2% | 87.2% | +9.0 |
+| single-session-preference | 60.0% | 70.0% | +10.0 |
+| multi-session | 78.9% | 84.2% | +5.3 |
 
-Full writeups:
-
-- [`benchmarks/REPORT_claudecode_mcp_v04.md`](benchmarks/REPORT_claudecode_mcp_v04.md)
-- [`benchmarks/README.md`](benchmarks/README.md)
+Full writeup: [`benchmarks/REPORT_v06.md`](benchmarks/REPORT_v06.md)
 
 Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
 
@@ -432,10 +432,10 @@ Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
 
 The next engineering priorities are:
 
-- fix reference-date override failures in duration calculations
-- restore targeted knowledge-update synthesis without reintroducing noisy preference synthesis
-- improve multi-session counting
-- keep the docs and benchmark surface aligned with the shipped code
+- precompute counts, durations, and sums during extraction (aggregation layer)
+- improve multi-session counting — model reads a precomputed number, doesn't produce one
+- hard salience floor in Prefixer to reduce context noise
+- implicit supersession detection for value-type conflicts
 
 ---
 
