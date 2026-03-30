@@ -131,6 +131,9 @@ claude mcp list   # should show dory ✓ Connected
 
 Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_visualize`, `dory_stats`.
 
+For a practical repo-local workflow with tools like Codex and Claude Code, see
+`docs/AGENT_MEMORY_WORKFLOW.md`.
+
 **Claude Desktop** — add to `claude_desktop_config.json`:
 ```json
 {

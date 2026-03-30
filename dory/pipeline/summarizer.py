@@ -521,10 +521,14 @@ class Summarizer:
 
         low_confidence_keys: list[str] = []
         for key, count in salient_counts.items():
+            try:
+                count_int = int(count)
+            except (TypeError, ValueError):
+                continue
             # Check how many EVENT nodes mention the first significant word of the key
             key_word = key.replace("_", " ").split()[0]
             event_mentions = sum(1 for c in event_contents if key_word in c)
-            if event_mentions > 0 and abs(event_mentions - count) > 1:
+            if event_mentions > 0 and abs(event_mentions - count_int) > 1:
                 low_confidence_keys.append(key)
 
         if low_confidence_keys:

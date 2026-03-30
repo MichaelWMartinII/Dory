@@ -180,15 +180,43 @@ def _get_linked_summaries(
     return nodes
 
 
-def _format_summary_block(summaries: list) -> str:
+def _aggregate_counts(summaries: list) -> dict:
+    """
+    Sum salient_counts across all SESSION_SUMMARY nodes.
+    Returns a dict of {key: total} for any key appearing in at least one summary.
+    """
+    totals: dict = {}
+    for node in summaries:
+        for k, v in (node.metadata.get("salient_counts") or {}).items():
+            if isinstance(v, (int, float)):
+                totals[k] = totals.get(k, 0) + v
+    return totals
+
+
+def _format_summary_block(summaries: list, include_totals: bool = False) -> str:
     """
     Render SESSION_SUMMARY nodes as a concise episodic block for context injection.
     Includes date, narrative, and salient_counts so the model can answer counting
     questions directly from structured data rather than re-deriving from prose.
+
+    If include_totals=True, prepend an aggregated totals line across all sessions.
     """
     if not summaries:
         return ""
-    lines = ["Episodic summaries (most recent first):"]
+
+    lines = []
+
+    # Aggregate totals across sessions when requested (for counting questions)
+    if include_totals:
+        totals = _aggregate_counts(summaries)
+        if totals:
+            totals_str = ", ".join(f"{k}: {v}" for k, v in sorted(totals.items()))
+            lines.append(f"AGGREGATED TOTALS (sum across ALL sessions): {totals_str}")
+            lines.append("↑ Use these totals directly for 'how many' questions. "
+                         "Do NOT recount from session text unless a total seems wrong.")
+            lines.append("")
+
+    lines.append("Episodic summaries (most recent first):")
     for node in summaries:
         date = node.metadata.get("session_date") or _parse_session_date(node.content)
         # Strip the "[date] Summary: " prefix — we'll re-render it cleanly
@@ -281,13 +309,13 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], 
 
     parts = []
 
-    summary_block = _format_summary_block(summaries or [])
+    summary_block = _format_summary_block(summaries or [], include_totals=True)
     if summary_block:
         parts.append(summary_block)
         parts.append(
-            "Note: The 'Counts' fields above are extracted totals — use them as a strong "
-            "starting point, but also check the SESSION memories below for any instances "
-            "that may not have been counted."
+            "Note: The AGGREGATED TOTALS above sum counts across ALL sessions — use them "
+            "as the authoritative answer for 'how many total' questions. If a thing appears "
+            "in multiple sessions, SUM those counts; do not use just the most recent session."
         )
 
     parts.append(semantic_block)

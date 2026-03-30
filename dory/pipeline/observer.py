@@ -44,7 +44,8 @@ Return ONLY valid JSON matching this schema exactly:
       "type": "ENTITY | CONCEPT | EVENT | PREFERENCE | BELIEF | PROCEDURE",
       "content": "concise natural language description",
       "tags": ["tag1", "tag2"],
-      "confidence": 0.0
+      "confidence": 0.0,
+      "supersedes_hint": "optional: if this fact UPDATES or REPLACES a prior value, describe the OLD value here (e.g. 'BBQ sauce was Sweet Baby Ray\\'s', 'pre-approval was $350,000'). Omit if not an update."
     }
   ],
   "edges": [
@@ -82,6 +83,7 @@ Rules:
   When a PROCEDURE also reveals a clear personal preference, extract BOTH nodes.
 - BELIEF: an assertion about the world the speaker holds to be true
 - PROCEDURE: a repeatable step-by-step process, workflow, skill, or algorithm the user applies
+- supersedes_hint: use when the conversation explicitly updates or corrects a prior value ("I switched to X", "now it's Y instead of Z", "updated from A to B", "my new X is Y"). Describe the OLD value briefly so it can be found and archived.
 - confidence: 0.9+ for explicitly stated facts, 0.7-0.89 for strongly implied, below 0.7 for uncertain
 - Only extract facts that would still be useful in a future unrelated session
 - Skip pleasantries, filler, and transient task details
@@ -455,6 +457,17 @@ class Observer:
             node_id = _session.observe(content, node_type, self.graph, tags=tags)
             content_to_id[content] = node_id
             self._stats["nodes_written"] += 1
+
+            # Supersession: if the LLM identified this as an update to a prior value,
+            # find the old node and create a SUPERSEDES edge + archive it.
+            supersedes_hint = (nd.get("supersedes_hint") or "").strip()
+            if supersedes_hint and len(supersedes_hint) >= 8:
+                old_node = self._find_similar(supersedes_hint, threshold=0.40)
+                if old_node and old_node.id != node_id and old_node.zone == "active":
+                    from ..schema import ZONE_ARCHIVED, now_iso as _now_iso
+                    old_node.zone = ZONE_ARCHIVED
+                    old_node.superseded_at = _now_iso()
+                    self.graph.add_edge(node_id, old_node.id, EdgeType.SUPERSEDES, weight=0.95)
 
             # Seed activation_count from extraction confidence so that weak signals
             # (single mentions, low confidence) start lower and decay faster than

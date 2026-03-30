@@ -230,7 +230,9 @@ _MCP_TYPE_HINTS = {
     ),
     "multi-session": (
         "This question may require info from multiple conversations. "
-        "Search broadly and count every relevant instance."
+        "Call dory_query 2-3 times with different search terms to find all relevant instances. "
+        "For 'this year', 'last week', 'recently', 'past few months': use ONLY the REFERENCE DATE "
+        "above — do not use the current calendar year."
     ),
     "knowledge-update": (
         "Use the most recent information — prefer updated values over originals."
@@ -273,7 +275,22 @@ def _answer_claude_code_mcp(
     }
 
     type_hint = _MCP_TYPE_HINTS.get(question_type, "")
-    date_line = f"REFERENCE DATE: {question_date}\n\n" if question_date else ""
+
+    if question_date:
+        import re as _re
+        year_match = _re.search(r"\b(20\d\d)\b", question_date)
+        year_str = year_match.group(1) if year_match else ""
+        year_clause = f" 'This year' means {year_str}, not the current calendar year." if year_str else ""
+        date_line = (
+            f"REFERENCE DATE: {question_date}\n"
+            f"CRITICAL — use this date as 'today' for ALL temporal reasoning. "
+            f"Never use your internal knowledge of the current date.{year_clause}\n"
+            f"- Durations ('how long have I had X'): (REFERENCE DATE) minus (start date from memory)\n"
+            f"- Recency ('this year', 'last week', 'last month', 'recently', 'past few months'): "
+            f"anchor to REFERENCE DATE\n\n"
+        )
+    else:
+        date_line = ""
 
     system_prompt = (
         f"{date_line}"

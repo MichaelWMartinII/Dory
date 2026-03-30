@@ -173,12 +173,19 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
         reverse=True,
     )[:max_nodes]
 
+    # Pre-compute which nodes have outgoing SUPERSEDES edges (they are canonical current values)
+    superseding_ids: set[str] = set()
+    for edge in graph.all_edges():
+        if edge.type == EdgeType.SUPERSEDES:
+            superseding_ids.add(edge.source_id)
+
     lines = []
     for node_id, level in ranked:
         node = graph.get_node(node_id)
         if not node or node.zone != ZONE_ACTIVE:
             continue
         core_marker = " [CORE]" if node.is_core else ""
+        current_marker = " [CURRENT VALUE]" if node_id in superseding_ids else ""
         # SESSION nodes already embed the date in their content as "[YYYY-MM-DD] Session: ..."
         # so we don't add a redundant (and potentially wrong) date hint for them.
         # EVENT nodes still get the hint from created_at.
@@ -187,7 +194,7 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
             d = _fmt_date(node.created_at)
             if d:
                 date_hint = f" ({d})"
-        lines.append(f"- [{node.type.value}{core_marker}]{date_hint} {node.content}")
+        lines.append(f"- [{node.type.value}{core_marker}{current_marker}]{date_hint} {node.content}")
 
     # Include edges between activated nodes
     activated_ids = set(activated)

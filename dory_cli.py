@@ -277,7 +277,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--graph",
-        help="Path to graph JSON file (default: ~/.claude memory dir)",
+        help="Path to SQLite graph file (default: $DORY_DB_PATH or ~/.dory/engram.db)",
         default=None,
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -359,7 +359,8 @@ def main() -> None:
     args = parser.parse_args()
 
     from dory.store import DEFAULT_GRAPH_PATH
-    graph_path = Path(args.graph) if args.graph else DEFAULT_GRAPH_PATH
+    env_graph = os.getenv("DORY_DB_PATH")
+    graph_path = Path(args.graph) if args.graph else Path(env_graph) if env_graph else DEFAULT_GRAPH_PATH
     graph = Graph(path=graph_path)
 
     dispatch = {
