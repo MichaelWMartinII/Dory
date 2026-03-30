@@ -1,6 +1,6 @@
 # Dory
 
-Persistent memory for AI agents. Graph-based, spreading activation retrieval, principled forgetting. Single SQLite file. No server required.
+Persistent memory for AI agents. Graph-based retrieval, principled forgetting, and a local SQLite-backed memory graph. No server required.
 
 ```bash
 pip install dory-memory
@@ -17,13 +17,13 @@ print(mem.query("what does the user prefer for inference?"))
 # → MLX (updated preference, supersedes llama.cpp)
 ```
 
-**LongMemEval (500q, oracle split):** 84.0% on the v0.6 Claude Code MCP run — new best across all versions.
+**Current checked-in benchmark result:** 84.0% on LongMemEval (500-question oracle split) for the v0.6 Claude Code MCP run. See [Benchmark results](#benchmark-results) and [Reproducing the benchmark](#reproducing-the-benchmark).
 
 ---
 
 ## The problem
 
-Every session, your agent starts from zero. Systems that claim to "remember" typically do keyword search through a flat list of notes. That's not memory — it's ctrl+F.
+Every session, your agent starts from zero. Many systems that claim to "remember" still reduce memory to retrieval over a flat list of notes.
 
 The deeper problem: naive context injection makes things *worse*. Research ([Chroma, 2025](https://research.trychroma.com/context-rot)) shows all major frontier models degrade starting at 500–750 tokens of context. Dumping everything into a prompt creates noise that degrades performance on the things that actually matter.
 
@@ -38,15 +38,15 @@ The deeper problem: naive context injection makes things *worse*. Research ([Chr
 | Procedural | Skills, workflows, repeatable processes | ✓ |
 | Working | In-context window (managed by your LLM) | — |
 
-**Spreading activation retrieval** — not vector similarity search. Relevant memories pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred. That's how human associative memory works.
+**Spreading activation retrieval** — relevant memories can pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred.
 
-**Cacheable prefix output** — Dory splits output into a *stable prefix* (unchanged until memory changes, enabling prompt cache hits) and a *dynamic suffix* (query-specific). Result: cache hits on every turn. Substantially cheaper to run agents with memory than without.
+**Cacheable prefix output** — Dory splits output into a *stable prefix* (unchanged until memory changes, enabling prompt cache hits) and a *dynamic suffix* (query-specific). This is designed to reduce prompt churn and make repeated agent calls cheaper.
 
 **Principled forgetting** — three decay zones: active, archived, expired. Scores based on recency + frequency + relevance. Archived memories are queryable for historical context ("what was true in January?"). Nothing is ever deleted — only decayed.
 
 **Bi-temporal conflict resolution** — when a fact changes, the old version is archived with a `SUPERSEDES` edge and a timestamp. Full provenance for every update.
 
-**Zero-server stack** — single SQLite file. FTS5 for keyword search, adjacency tables for the graph. No Postgres, no Neo4j, no Redis. Works offline.
+**Zero-server stack** — single SQLite file. FTS5 for keyword search, adjacency tables for the graph. Works offline and stays easy to inspect locally.
 
 ---
 
@@ -238,6 +238,17 @@ Security and hardening guidance lives in:
 - `docs/HARDENING_2026-03-29.md`
 - `docs/REPO_CLEANUP_2026-03-29.md`
 
+### What Dory is, and is not
+
+Dory is currently best suited for:
+
+- local-first agent workflows
+- single-user or small-team memory graphs
+- tool integrations such as Claude Code, MCP clients, and Python agent stacks
+
+Dory is not yet a hosted, managed memory platform. The current tradeoff is deliberate:
+favor a transparent local library over a multi-tenant service.
+
 ---
 
 ## How it works
@@ -342,7 +353,9 @@ Memory is never deleted — only decayed. Archived and expired nodes retain full
 
 ---
 
-## Comparison
+## Feature snapshot
+
+This table is meant to orient readers around design choices, not claim a universal ranking.
 
 | | mem0 | Zep | Letta | Mastra | **Dory** |
 |---|---|---|---|---|---|
@@ -381,7 +394,7 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
     └─[WORKS_ON]──▶
   ● [ENTITY]     Dory — agent memory library
     └─[CO_OCCURS]──▶
-  ● [EVENT]      [2026-03-30] v0.6 full benchmark — 84.0% LongMemEval (new best)
+  ● [EVENT]      [2026-03-30] v0.6 full benchmark — 84.0% LongMemEval
 
   ✗ Flat search: returns both endpoints as separate results. No connecting path.
 ```
@@ -410,7 +423,7 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
 | v0.5 | Haiku | Claude Code (MCP) | 500 | 79.6% |
 | **v0.6** | **Haiku** | **Claude Code (MCP)** | **500** | **84.0%** |
 
-v0.6 improved every category. The biggest gains:
+This is the strongest checked-in run so far. The largest category gains versus v0.5 were:
 
 | Category | v0.5 | v0.6 | Δ |
 |---|---|---|---|
@@ -418,13 +431,71 @@ v0.6 improved every category. The biggest gains:
 | single-session-preference | 60.0% | 70.0% | +10.0 |
 | multi-session | 78.9% | 84.2% | +5.3 |
 
-Full writeup: [`benchmarks/REPORT_v06.md`](benchmarks/REPORT_v06.md)
+Artifacts and writeups:
+
+- [`benchmarks/REPORT_v06.md`](benchmarks/REPORT_v06.md)
+- [`benchmarks/predictions_v06_claudecode_mcp_full.jsonl`](benchmarks/predictions_v06_claudecode_mcp_full.jsonl)
+- [`benchmarks/predictions_v06_claudecode_mcp_full.eval.jsonl`](benchmarks/predictions_v06_claudecode_mcp_full.eval.jsonl)
+- [`benchmarks/README.md`](benchmarks/README.md)
 
 Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
 
 ¹ Mastra uses GPT-4o-mini on TypeScript. Architecturally different stacks — not directly comparable.
 
 **Note:** LongMemEval oracle split uses pre-filtered context (~15K tokens per question). Performance with live, unfiltered conversations will differ.
+
+## Reproducing the benchmark
+
+Canonical benchmark entry points live under [`benchmarks/`](benchmarks/README.md).
+
+Full oracle run with the checked-in harness:
+
+```bash
+cd Dory
+source .env
+./run_benchmark.sh
+```
+
+That script runs:
+
+```bash
+python3 benchmarks/longmemeval.py \
+  --data benchmarks/data/longmemeval/longmemeval_oracle.json \
+  --output benchmarks/predictions_$(date +%Y%m%d_%H%M%S).jsonl \
+  --backend anthropic \
+  --extract-model claude-haiku-4-5-20251001 \
+  --answer-model claude-haiku-4-5-20251001 \
+  --api-key "$ANTHROPIC_API_KEY" \
+  --verbose
+```
+
+Then evaluate the predictions:
+
+```bash
+source .env
+ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+python3 benchmarks/evaluate_qa_claude.py \
+  benchmarks/predictions_YYYYMMDD_HHMMSS.jsonl \
+  benchmarks/data/longmemeval/longmemeval_oracle.json
+```
+
+For cheaper iteration, use a spot dataset first:
+
+```bash
+python3 benchmarks/longmemeval.py \
+  --data benchmarks/spot_micro.json \
+  --output benchmarks/predictions_spot.jsonl \
+  --backend anthropic \
+  --extract-model claude-haiku-4-5-20251001 \
+  --answer-model claude-haiku-4-5-20251001 \
+  --api-key "$ANTHROPIC_API_KEY"
+```
+
+Benchmark caveats:
+
+- LongMemEval oracle is a filtered-context benchmark, not a raw multi-month transcript benchmark.
+- Claude Code MCP runs and direct API runs are both useful, but they are not identical execution environments.
+- Exact scores can move with prompt, extraction logic, model version, and evaluation backend updates.
 
 ---
 
@@ -458,4 +529,4 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 ---
 
-*Named after Dory from Finding Nemo, because your AI agent right now is Dory. This fixes it.*
+*Named after Dory from Finding Nemo, because most agent sessions still have the memory of a goldfish.*
