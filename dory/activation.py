@@ -159,7 +159,52 @@ def spread(
     return {nid: v for nid, v in activation.items() if v >= threshold}
 
 
-def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) -> str:
+SALIENCE_FLOOR: float = 0.1  # nodes below this are skipped during serialization
+
+
+def _compute_duration_hint(start_date_iso: str, reference_date: str) -> str:
+    """
+    Given a start_date (YYYY-MM-DD) and reference_date (YYYY-MM-DD or
+    human-readable like 'Monday, May 20, 2023'), return a string like
+    '~9 months, since 2023-03-01' or '' on any failure.
+    """
+    if not start_date_iso or not reference_date:
+        return ""
+    try:
+        from datetime import datetime as _dt
+        ref = None
+        for fmt in ("%Y-%m-%d", "%A, %B %d, %Y", "%B %d, %Y"):
+            try:
+                ref = _dt.strptime(reference_date.strip(), fmt)
+                break
+            except ValueError:
+                continue
+        if ref is None:
+            return ""
+        start = _dt.fromisoformat(start_date_iso[:10])
+        delta = ref - start
+        if delta.days < 0:
+            return ""
+        months = delta.days / 30.44
+        if months < 1:
+            d = delta.days
+            return f"~{d} day{'s' if d != 1 else ''}, since {start_date_iso[:10]}"
+        elif months < 24:
+            m = round(months)
+            return f"~{m} month{'s' if m != 1 else ''}, since {start_date_iso[:10]}"
+        else:
+            y = round(months / 12, 1)
+            return f"~{y} years, since {start_date_iso[:10]}"
+    except Exception:
+        return ""
+
+
+def serialize(
+    activated: dict[str, float],
+    graph: Graph,
+    max_nodes: int = 20,
+    reference_date: str = "",
+) -> str:
     """Convert activated subgraph to a natural language context block."""
     if not activated:
         return "(no relevant memories found)"
@@ -184,6 +229,9 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
         node = graph.get_node(node_id)
         if not node or node.zone != ZONE_ACTIVE:
             continue
+        # Skip low-salience nodes to reduce noise (only after first save cycle)
+        if node.activation_count > 0 and node.salience < SALIENCE_FLOOR:
+            continue
         core_marker = " [CORE]" if node.is_core else ""
         current_marker = " [CURRENT VALUE]" if node_id in superseding_ids else ""
         # SESSION nodes already embed the date in their content as "[YYYY-MM-DD] Session: ..."
@@ -194,7 +242,26 @@ def serialize(activated: dict[str, float], graph: Graph, max_nodes: int = 20) ->
             d = _fmt_date(node.created_at)
             if d:
                 date_hint = f" ({d})"
-        lines.append(f"- [{node.type.value}{core_marker}{current_marker}]{date_hint} {node.content}")
+        # Duration hint for entities with a known start_date
+        duration_hint = ""
+        if reference_date and node.metadata:
+            start_date = node.metadata.get("start_date", "")
+            if start_date:
+                dur = _compute_duration_hint(start_date, reference_date)
+                if dur:
+                    duration_hint = f" ({dur})"
+        # Occurrence count and amount hint (precomputed during extraction)
+        occurrence_hint = ""
+        if node.metadata:
+            count = node.metadata.get("occurrence_count", 0)
+            amount = node.metadata.get("amount", "")
+            if count > 1 and amount:
+                occurrence_hint = f" (×{count}, {amount})"
+            elif count > 1:
+                occurrence_hint = f" (×{count})"
+            elif amount:
+                occurrence_hint = f" [{amount}]"
+        lines.append(f"- [{node.type.value}{core_marker}{current_marker}]{date_hint}{duration_hint}{occurrence_hint} {node.content}")
 
     # Include edges between activated nodes
     activated_ids = set(activated)

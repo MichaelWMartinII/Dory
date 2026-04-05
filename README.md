@@ -134,6 +134,9 @@ Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_
 For a practical repo-local workflow with tools like Codex and Claude Code, see
 `docs/AGENT_MEMORY_WORKFLOW.md`.
 
+For shared memory between Codex and Claude Code, see
+`docs/CODEX_INTEGRATION.md`.
+
 **Claude Desktop** — add to `claude_desktop_config.json`:
 ```json
 {

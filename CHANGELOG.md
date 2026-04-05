@@ -2,14 +2,38 @@
 
 ## Unreleased
 
+## [0.7.0] — 2026-04-05
+
+### Added
+- **Duration hints** — `serialize()` now accepts a `reference_date` parameter and
+  annotates nodes with a `start_date` in metadata (e.g. `(~9 months, since 2023-03-01)`).
+  All context builders (`_temporal_context`, `_hybrid_context`, `_aggregation_context`,
+  `_preference_context`, `_procedure_context`) thread `reference_date` through to
+  serialization.
+- **Occurrence and amount hints** — Observer extracts `occurrence_count` and `amount`
+  metadata fields. Repeated reinforcement increments the count; `serialize()` surfaces
+  them as `(×3, $350,000)` inline annotations for aggregation and counting questions.
+- **`start_date` extraction** — Observer prompt now extracts `start_date` for facts
+  that imply a duration ("I've been at this job since March", "started medication last
+  Monday"). Approximate ISO date is computed from session date when provided.
+- **Implicit supersession** — Observer detects numeric-value conflicts without explicit
+  update language (e.g. "pre-approval is $400k" following "$350k") using
+  `_find_similar` at threshold 0.45 and `_extract_numeric_value`.
+- **`supersedes_hint` and `amount` in Observer schema** — extraction prompt now asks
+  for these fields explicitly, improving supersession chain accuracy.
+- **Salience floor** — `serialize()` skips nodes with `activation_count > 0` and
+  `salience < 0.1`, reducing noise from single-mention stale nodes in large graphs.
+
 ### Changed
 - Visualization is now safe-by-default: generated HTML no longer loads remote
   D3.js unless explicitly requested. The default output is a local-only fallback
   view that still exposes node and edge data.
 - `DoryMemory.visualize()` and `dory visualize` now support explicit opt-in to
   remote assets for the full interactive graph view.
-- README benchmark and project-status sections were updated to reflect the
-  current `v0.5` state and the formalized benchmark surface.
+
+### Benchmark
+- LongMemEval 500q: **84.2%** (421/500) — flat vs v0.6 overall, with meaningful
+  gains in knowledge-update (+5.1pp → 92.3%) and multi-session (+1.5pp → 85.7%).
 
 ### Repo cleanup
 - Removed stale `benchmarks/eval_and_compare.sh`, which referenced missing benchmark files.

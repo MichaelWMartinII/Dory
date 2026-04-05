@@ -45,7 +45,9 @@ Return ONLY valid JSON matching this schema exactly:
       "content": "concise natural language description",
       "tags": ["tag1", "tag2"],
       "confidence": 0.0,
-      "supersedes_hint": "optional: if this fact UPDATES or REPLACES a prior value, describe the OLD value here (e.g. 'BBQ sauce was Sweet Baby Ray\\'s', 'pre-approval was $350,000'). Omit if not an update."
+      "supersedes_hint": "optional: if this fact UPDATES or REPLACES a prior value, describe the OLD value here (e.g. 'BBQ sauce was Sweet Baby Ray\\'s', 'pre-approval was $350,000'). Omit if not an update.",
+      "start_date": "YYYY-MM-DD or empty — the date this fact began (use when the start matters for 'how long have I...' questions, e.g. job start, subscription start, symptom onset). Omit if not applicable.",
+      "amount": "numeric value with unit if present (e.g. '3 times', '$350,000', '5 lbs', '2 hours/week'). Omit if not a quantifiable fact."
     }
   ],
   "edges": [
@@ -84,6 +86,8 @@ Rules:
 - BELIEF: an assertion about the world the speaker holds to be true
 - PROCEDURE: a repeatable step-by-step process, workflow, skill, or algorithm the user applies
 - supersedes_hint: use when the conversation explicitly updates or corrects a prior value ("I switched to X", "now it's Y instead of Z", "updated from A to B", "my new X is Y"). Describe the OLD value briefly so it can be found and archived.
+- start_date: extract when facts imply a duration ("I've been working at X since March", "started taking medication last Monday", "joined the gym 3 months ago"). Calculate the approximate ISO date using the session date if provided.
+- amount: extract quantifiable values so counting questions can read the answer directly. "User went to the gym 3 times this week" → amount: "3 times/week". "User's pre-approval is $400,000" → amount: "$400,000".
 - confidence: 0.9+ for explicitly stated facts, 0.7-0.89 for strongly implied, below 0.7 for uncertain
 - Only extract facts that would still be useful in a future unrelated session
 - Skip pleasantries, filler, and transient task details
@@ -226,6 +230,21 @@ def _extract_json(raw: str) -> dict | None:
             return json.loads(match.group())
         except json.JSONDecodeError:
             pass
+    return None
+
+
+def _extract_numeric_value(text: str) -> float | None:
+    """
+    Extract the first significant numeric value from text.
+    Handles plain integers, decimals, and currency (e.g. $350,000).
+    Returns None if no number found.
+    """
+    matches = re.findall(r"\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)", text)
+    for m in matches:
+        try:
+            return float(m.replace(",", ""))
+        except ValueError:
+            continue
     return None
 
 
@@ -443,6 +462,12 @@ class Observer:
                 # Reinforce by updating last_activated
                 existing.activation_count += 1
                 existing.last_activated = now_iso()
+                # Increment occurrence count — each reinforcement is a new instance
+                existing.metadata["occurrence_count"] = existing.metadata.get("occurrence_count", 1) + 1
+                # Update amount if a newer value is provided
+                new_amount = (nd.get("amount") or "").strip()
+                if new_amount:
+                    existing.metadata["amount"] = new_amount
                 # Track session diversity: increment distinct_sessions only if this
                 # session hasn't already contributed to this node.
                 sessions_seen: list = existing.metadata.get("sessions_seen") or []
@@ -489,6 +514,29 @@ class Observer:
                 # First session to see this node
                 node.distinct_sessions = 1
                 node.metadata["sessions_seen"] = [self.session_id]
+                # Structured fields for aggregation and duration queries
+                node.metadata["occurrence_count"] = 1
+                start_date = (nd.get("start_date") or "").strip()
+                if start_date:
+                    node.metadata["start_date"] = start_date
+                amount = (nd.get("amount") or "").strip()
+                if amount:
+                    node.metadata["amount"] = amount
+
+            # Implicit supersession: detect numeric value conflicts even without
+            # an explicit supersedes_hint. Catches cases like "pre-approval is $400k"
+            # following a prior "pre-approval is $350k" where no update language was used.
+            if not supersedes_hint:
+                implicit_old = self._find_similar(content, threshold=0.45)
+                if implicit_old and implicit_old.id != node_id and implicit_old.zone == "active":
+                    old_val = _extract_numeric_value(implicit_old.content)
+                    new_val = _extract_numeric_value(content)
+                    if (old_val is not None and new_val is not None
+                            and abs(old_val - new_val) > 1e-9):
+                        from ..schema import ZONE_ARCHIVED, now_iso as _now_iso2
+                        implicit_old.zone = ZONE_ARCHIVED
+                        implicit_old.superseded_at = _now_iso2()
+                        self.graph.add_edge(node_id, implicit_old.id, EdgeType.SUPERSEDES, weight=0.95)
 
         # Write edges
         for ed in edges_data:

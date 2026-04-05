@@ -47,7 +47,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def dory_query(topic: str) -> str:
+def dory_query(topic: str, reference_date: str = "") -> str:
     """
     Query the Dory memory graph using spreading activation.
 
@@ -60,9 +60,12 @@ def dory_query(topic: str) -> str:
 
     Args:
         topic: Natural language description of what you want to recall.
+        reference_date: Optional ISO date (YYYY-MM-DD) to use as "today" for
+            duration calculations (e.g. "how long have I worked at X"). Pass the
+            question date here when answering temporal questions.
     """
     graph = _graph()
-    result = session.query(topic, graph)
+    result = session.query(topic, graph, reference_date=reference_date)
     graph.save()
     return result
 

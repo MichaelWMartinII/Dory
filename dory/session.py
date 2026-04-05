@@ -236,7 +236,7 @@ def _format_summary_block(summaries: list, include_totals: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _temporal_context(graph: Graph, activated: dict[str, float], summaries: list | None = None) -> str:
+def _temporal_context(graph: Graph, activated: dict[str, float], summaries: list | None = None, reference_date: str = "") -> str:
     """
     For temporal questions: episodic summaries (if any) then SESSION nodes in
     chronological order, then spread-activated semantic nodes for subject context.
@@ -257,26 +257,19 @@ def _temporal_context(graph: Graph, activated: dict[str, float], summaries: list
     for node in session_nodes:
         lines.append(f"- {node.content}")
 
-    non_session = sorted(
-        [
-            (nid, lvl) for nid, lvl in activated.items()
-            if graph.get_node(nid) and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
-        ],
-        key=lambda x: -x[1],
-    )[:20]
+    non_session = {
+        nid: lvl for nid, lvl in activated.items()
+        if graph.get_node(nid) and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
+    }
 
     if non_session:
         lines.append("\nAdditional context:")
-        for nid, _ in non_session:
-            node = graph.get_node(nid)
-            if node:
-                core_marker = " [CORE]" if node.is_core else ""
-                lines.append(f"- [{node.type.value}{core_marker}] {node.content}")
+        lines.append(act.serialize(non_session, graph, max_nodes=20, reference_date=reference_date))
 
     return "\n".join(lines)
 
 
-def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None) -> str:
+def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None, reference_date: str = "") -> str:
     """
     For counting/listing questions: episodic summaries (structured counts first),
     then full FTS expansion so every relevant instance is captured.
@@ -305,7 +298,7 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], 
         elif node and node.type.value != "SESSION_SUMMARY":
             non_session[node_id] = level
 
-    semantic_block = act.serialize(non_session, graph, max_nodes=80)
+    semantic_block = act.serialize(non_session, graph, max_nodes=80, reference_date=reference_date)
 
     parts = []
 
@@ -327,13 +320,13 @@ def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], 
     return "\n\n".join(p for p in parts if p)
 
 
-def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None) -> str:
+def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None, reference_date: str = "") -> str:
     """
     For evolution/change questions: semantic graph block followed by episodic
     summaries and session log, with explicit trust hierarchy.
     """
-    semantic = act.serialize(activated, graph, max_nodes=30)
-    episodic = _aggregation_context(topic, graph, activated, summaries)
+    semantic = act.serialize(activated, graph, max_nodes=30, reference_date=reference_date)
+    episodic = _aggregation_context(topic, graph, activated, summaries, reference_date=reference_date)
 
     return (
         semantic
@@ -346,7 +339,7 @@ def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summa
     )
 
 
-def _procedure_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+def _procedure_context(topic: str, graph: Graph, activated: dict[str, float], reference_date: str = "") -> str:
     """
     For how-to / procedural questions: surface PROCEDURE nodes first, then
     spreading activation semantic context, then any relevant session history.
@@ -391,7 +384,7 @@ def _procedure_context(topic: str, graph: Graph, activated: dict[str, float]) ->
         parts.append("\n".join(proc_lines))
 
     if expanded:
-        parts.append(act.serialize(expanded, graph, max_nodes=20))
+        parts.append(act.serialize(expanded, graph, max_nodes=20, reference_date=reference_date))
 
     return "\n\n".join(p for p in parts if p) or "(no relevant memories found)"
 
@@ -413,7 +406,7 @@ def _dedup_similar(nodes: list, threshold: float = 0.65) -> list:
     return kept
 
 
-def _preference_context(topic: str, graph: Graph, activated: dict[str, float]) -> str:
+def _preference_context(topic: str, graph: Graph, activated: dict[str, float], reference_date: str = "") -> str:
     """
     For preference/recommendation questions: surface explicit PREFERENCE nodes first,
     then KEY EVENTS (specific memorable episodes), then SESSION_SUMMARY grounding,
@@ -529,7 +522,7 @@ def _preference_context(topic: str, graph: Graph, activated: dict[str, float]) -
 
     # 4. FTS-expanded semantic context (entity-capped, events already shown above)
     if expanded:
-        parts.append(act.serialize(expanded, graph, max_nodes=20))
+        parts.append(act.serialize(expanded, graph, max_nodes=20, reference_date=reference_date))
 
     # 5. Full session narratives
     session_nodes = sorted(
@@ -576,7 +569,7 @@ def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5,
     return linked
 
 
-def query(topic: str, graph: Graph) -> str:
+def query(topic: str, graph: Graph, reference_date: str = "") -> str:
     """
     Query the graph for context relevant to a topic.
     Returns a context block suitable for injecting into a prompt.
@@ -587,6 +580,9 @@ def query(topic: str, graph: Graph) -> str:
     - default:      spreading activation (all other questions)
 
     All modes ensure SESSION nodes are present for episodic recall.
+
+    reference_date: ISO date string (YYYY-MM-DD) used to compute duration hints
+    (e.g. "~9 months, since 2023-03-01") for nodes with a start_date in metadata.
     """
     seeds = act.find_seeds(topic, graph)
     activated: dict[str, float] = {}
@@ -602,7 +598,7 @@ def query(topic: str, graph: Graph) -> str:
     route = _route_query(topic)
 
     if route == "procedure":
-        return _procedure_context(topic, graph, activated)
+        return _procedure_context(topic, graph, activated, reference_date=reference_date)
 
     # For episodic and hybrid routes, pull SESSION_SUMMARY nodes linked to
     # the activated semantic nodes — staged retrieval.
@@ -612,17 +608,17 @@ def query(topic: str, graph: Graph) -> str:
 
     if route == "hybrid":
         if _PREFERENCE_RE.search(topic):
-            return _preference_context(topic, graph, activated)
-        return _hybrid_context(topic, graph, activated, summaries)
+            return _preference_context(topic, graph, activated, reference_date=reference_date)
+        return _hybrid_context(topic, graph, activated, summaries, reference_date=reference_date)
 
     if route == "episodic":
         # Aggregation wins over temporal when both signals are present —
         # counting questions need exhaustive recall, not just ordering.
         if _AGGREGATION_RE.search(topic):
-            return _aggregation_context(topic, graph, activated, summaries)
-        return _temporal_context(graph, activated, summaries)
+            return _aggregation_context(topic, graph, activated, summaries, reference_date=reference_date)
+        return _temporal_context(graph, activated, summaries, reference_date=reference_date)
 
-    return act.serialize(activated, graph, max_nodes=50)
+    return act.serialize(activated, graph, max_nodes=50, reference_date=reference_date)
 
 
 def observe(

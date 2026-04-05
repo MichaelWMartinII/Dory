@@ -166,12 +166,23 @@ During spread:
 - activation accumulates across paths
 - touched nodes and traversed edges get their activation metadata updated
 
+Nodes with `salience < SALIENCE_FLOOR` (default 0.1) are skipped in
+serialization after their first save cycle. This prevents low-signal memories
+from polluting context.
+
 The serialized result is a compact natural-language block containing:
 
 - top activated nodes
 - `[CORE]` markers for high-salience memories
 - `[CURRENT VALUE]` markers for nodes that supersede older values
+- duration hints for nodes with a known `start_date` metadata field:
+  `(~9 months, since 2023-03-01)` — computed from `reference_date`
+- occurrence and amount hints for tracked quantities:
+  `(×3, 3 days/week)` or `[$400,000]`
 - relationship lines between activated nodes
+
+`serialize()` accepts an optional `reference_date` (ISO date string) so
+duration hints are anchored to the question date rather than wall clock time.
 
 ### Query Routing
 
@@ -234,6 +245,18 @@ Current properties:
 - low-confidence memories are filtered before graph insertion
 - extraction can attach `supersedes_hint` to support later knowledge updates
 - node `activation_count` is seeded from extraction confidence
+
+The extraction schema includes optional structured fields beyond content and
+type:
+
+- `start_date` (YYYY-MM-DD): when a fact began, for "how long have I..." queries
+- `amount`: quantifiable value with unit (e.g. `"3 times/week"`, `"$400,000"`)
+- `occurrence_count`: incremented on each reinforcement of an existing node
+
+On each write, Observer checks for implicit supersession: if a similar node
+exists at similarity ≥ 0.45 and the numeric value in the new fact differs from
+the old one, the old node is archived and linked with a `SUPERSEDES` edge. This
+supplements the explicit `supersedes_hint` path in the Reflector.
 
 Observer is responsible for semantic memory creation, not full transcript
 preservation.
@@ -352,7 +375,7 @@ explicit opt-in for the fully interactive graph.
 
 `dory/mcp_server.py` exposes five tools:
 
-- `dory_query`
+- `dory_query(topic, reference_date="")` — optional ISO date anchors duration hints
 - `dory_observe`
 - `dory_consolidate`
 - `dory_visualize`

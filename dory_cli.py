@@ -27,7 +27,17 @@ from dory import session
 
 
 def cmd_query(args, graph: Graph) -> None:
-    print(session.query(" ".join(args.topic), graph))
+    result = session.query(" ".join(args.topic), graph)
+    if args.json:
+        print(json.dumps({
+            "ok": True,
+            "command": "query",
+            "db_path": str(graph.path),
+            "topic": " ".join(args.topic),
+            "result": result,
+        }))
+    else:
+        print(result)
     graph.save()
 
 
@@ -35,12 +45,33 @@ def cmd_observe(args, graph: Graph) -> None:
     try:
         node_type = NodeType(args.type.upper())
     except ValueError:
-        print(f"Unknown node type: {args.type}. Valid: {[t.value for t in NodeType]}")
+        valid = [t.value for t in NodeType]
+        if args.json:
+            print(json.dumps({
+                "ok": False,
+                "command": "observe",
+                "error": f"Unknown node type: {args.type}",
+                "valid_types": valid,
+            }))
+        else:
+            print(f"Unknown node type: {args.type}. Valid: {valid}")
         sys.exit(1)
     tags = args.tags.split(",") if args.tags else []
-    node_id = session.observe(" ".join(args.content), node_type, graph, tags=tags)
+    content = " ".join(args.content)
+    node_id = session.observe(content, node_type, graph, tags=tags)
     graph.save()
-    print(f"Added node {node_id}: {' '.join(args.content)}")
+    if args.json:
+        print(json.dumps({
+            "ok": True,
+            "command": "observe",
+            "db_path": str(graph.path),
+            "node_id": node_id,
+            "node_type": node_type.value,
+            "content": content,
+            "tags": tags,
+        }))
+    else:
+        print(f"Added node {node_id}: {content}")
 
 
 def cmd_link(args, graph: Graph) -> None:
@@ -83,14 +114,33 @@ def cmd_list(args, graph: Graph) -> None:
 
 def cmd_show(args, graph: Graph) -> None:
     stats = graph.stats()
+    core_nodes = [n for n in graph.all_nodes() if n.is_core]
+    sorted_core = sorted(core_nodes, key=lambda n: n.salience, reverse=True)
+    if args.json:
+        print(json.dumps({
+            "ok": True,
+            "command": "show",
+            "db_path": str(graph.path),
+            "stats": stats,
+            "core_memories": [
+                {
+                    "id": n.id,
+                    "type": n.type.value,
+                    "content": n.content,
+                    "salience": round(n.salience, 4),
+                }
+                for n in sorted_core
+            ],
+        }))
+        return
+
     print(f"Nodes:      {stats['nodes']}")
     print(f"Edges:      {stats['edges']}")
     print(f"Core nodes: {stats['core_nodes']}")
     print()
-    core_nodes = [n for n in graph.all_nodes() if n.is_core]
-    if core_nodes:
+    if sorted_core:
         print("Core memories:")
-        for n in sorted(core_nodes, key=lambda n: n.salience, reverse=True):
+        for n in sorted_core:
             print(f"  [{n.type.value}] {n.content}  (salience={n.salience:.2f})")
 
 
@@ -260,6 +310,15 @@ def cmd_review_session(args, graph: Graph) -> None:
 
 def cmd_consolidate(args, graph: Graph) -> None:
     result = session.end_session(graph)
+    if args.json:
+        print(json.dumps({
+            "ok": True,
+            "command": "consolidate",
+            "db_path": str(graph.path),
+            "result": result,
+        }))
+        return
+
     print(f"Consolidation complete:")
     print(f"  Pruned edges:      {result['pruned_edges']}")
     print(f"  Promoted core:     {result['promoted_core']}")
@@ -285,12 +344,14 @@ def main() -> None:
     # query
     p_query = sub.add_parser("query", help="Spread activation and return context")
     p_query.add_argument("topic", nargs="+", help="Topic or query terms")
+    p_query.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     # observe
     p_obs = sub.add_parser("observe", help="Add a new observation node")
     p_obs.add_argument("type", help="Node type: ENTITY, CONCEPT, EVENT, PREFERENCE, BELIEF")
     p_obs.add_argument("content", nargs="+", help="Natural language description")
     p_obs.add_argument("--tags", help="Comma-separated tags", default=None)
+    p_obs.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     # link
     p_link = sub.add_parser("link", help="Create a typed edge between two nodes")
@@ -304,7 +365,8 @@ def main() -> None:
     p_list.add_argument("--type", help="Filter by node type", default=None)
 
     # show
-    sub.add_parser("show", help="Show graph stats and core memories")
+    p_show = sub.add_parser("show", help="Show graph stats and core memories")
+    p_show.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     # visualize
     p_viz = sub.add_parser("visualize", help="Open an interactive graph visualization in the browser")
@@ -315,7 +377,8 @@ def main() -> None:
     p_viz.add_argument("--remote-assets", action="store_true", help="Allow remote D3.js for the fully interactive graph view")
 
     # consolidate
-    sub.add_parser("consolidate", help="Run end-of-session consolidation")
+    p_cons = sub.add_parser("consolidate", help="Run end-of-session consolidation")
+    p_cons.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     # review-session
     p_review = sub.add_parser(
