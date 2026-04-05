@@ -157,13 +157,13 @@ class DoryMemory:
     # Session lifecycle
     # ------------------------------------------------------------------
 
-    def flush(self) -> dict:
+    def consolidate(self) -> dict:
         """
         End the session.
 
-        Flushes any buffered turns, extracts remaining memories, then runs
-        full consolidation: edge decay, node zone management, deduplication,
-        supersession detection, and core promotion.
+        Extracts any remaining buffered memories, then runs full consolidation:
+        edge decay, node zone management, deduplication, supersession detection,
+        and core promotion.
 
         Returns a combined stats dict.
         """
@@ -173,6 +173,10 @@ class DoryMemory:
         consolidation_stats = consolidation.run(self._graph)
         self._prefixer.invalidate()
         return {**extraction_stats, **consolidation_stats}
+
+    def flush(self) -> dict:
+        """Alias for consolidate(). Kept for backward compatibility."""
+        return self.consolidate()
 
     # ------------------------------------------------------------------
     # Async API
@@ -208,10 +212,14 @@ class DoryMemory:
             self._executor, lambda: self.observe(content, node_type, tags)
         )
 
-    async def aflush(self) -> dict:
-        """Async version of flush(). Awaitable — LLM extraction runs in thread pool."""
+    async def aconsolidate(self) -> dict:
+        """Async version of consolidate(). Awaitable — LLM extraction runs in thread pool."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, self.flush)
+        return await loop.run_in_executor(self._executor, self.consolidate)
+
+    async def aflush(self) -> dict:
+        """Alias for aconsolidate(). Kept for backward compatibility."""
+        return await self.aconsolidate()
 
     # ------------------------------------------------------------------
     # Power-user access

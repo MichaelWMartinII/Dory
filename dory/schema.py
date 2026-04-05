@@ -15,6 +15,7 @@ class NodeType(str, Enum):
     SESSION = "SESSION"
     PROCEDURE = "PROCEDURE"  # step-by-step process, workflow, skill, or algorithm
     SESSION_SUMMARY = "SESSION_SUMMARY"  # compressed episodic summary of a session
+    WORKING = "WORKING"      # ephemeral session-scoped fact; auto-archived after consolidation if not reinforced
 
 
 class EdgeType(str, Enum):

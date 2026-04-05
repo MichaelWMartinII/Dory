@@ -41,7 +41,7 @@ Return ONLY valid JSON matching this schema exactly:
 {
   "nodes": [
     {
-      "type": "ENTITY | CONCEPT | EVENT | PREFERENCE | BELIEF | PROCEDURE",
+      "type": "ENTITY | CONCEPT | EVENT | PREFERENCE | BELIEF | PROCEDURE | WORKING",
       "content": "concise natural language description",
       "tags": ["tag1", "tag2"],
       "confidence": 0.0,
@@ -85,6 +85,10 @@ Rules:
   When a PROCEDURE also reveals a clear personal preference, extract BOTH nodes.
 - BELIEF: an assertion about the world the speaker holds to be true
 - PROCEDURE: a repeatable step-by-step process, workflow, skill, or algorithm the user applies
+- WORKING: a session-scoped fact relevant NOW but not necessarily a lasting preference or belief.
+  Use for: current tasks ("user is currently comparing X vs Y"), temporary states ("user is visiting
+  Tokyo this week"), and in-progress decisions ("user is deciding whether to buy a NAS"). These will
+  be auto-archived after consolidation if never reinforced again.
 - supersedes_hint: use when the conversation explicitly updates or corrects a prior value ("I switched to X", "now it's Y instead of Z", "updated from A to B", "my new X is Y"). Describe the OLD value briefly so it can be found and archived.
 - start_date: extract when facts imply a duration ("I've been working at X since March", "started taking medication last Monday", "joined the gym 3 months ago"). Calculate the approximate ISO date using the session date if provided.
 - amount: extract quantifiable values so counting questions can read the answer directly. "User went to the gym 3 times this week" → amount: "3 times/week". "User's pre-approval is $400,000" → amount: "$400,000".
@@ -498,9 +502,14 @@ class Observer:
             # (single mentions, low confidence) start lower and decay faster than
             # strongly-confirmed facts. Prevents one-off questions from persisting
             # with the same salience as repeatedly-confirmed preferences.
+            # WORKING nodes are always seeded at 2 — they must clear the salience
+            # floor (0.1) immediately since they're relevant by definition in-session,
+            # but they decay faster than reinforced nodes if never seen again.
             node = self.graph.get_node(node_id)
             if node is not None:
-                if confidence >= 0.95:
+                if node_type == "WORKING":
+                    node.activation_count = 2
+                elif confidence >= 0.95:
                     node.activation_count = 3
                 elif confidence >= 0.85:
                     node.activation_count = 2

@@ -264,7 +264,17 @@ def _temporal_context(graph: Graph, activated: dict[str, float], summaries: list
 
     if non_session:
         lines.append("\nAdditional context:")
-        lines.append(act.serialize(non_session, graph, max_nodes=20, reference_date=reference_date))
+        # Sort EVENT nodes by event_date metadata for chronological ordering;
+        # non-EVENT nodes follow sorted by activation level.
+        def _temporal_sort_key(item: tuple[str, float]) -> tuple[int, str, float]:
+            nid, lvl = item
+            node = graph.get_node(nid)
+            if node and node.type.value == "EVENT":
+                date = node.metadata.get("event_date") or node.metadata.get("start_date") or ""
+                return (0, date, -lvl)
+            return (1, "", -lvl)
+        ordered = dict(sorted(non_session.items(), key=_temporal_sort_key))
+        lines.append(act.serialize(ordered, graph, max_nodes=20, reference_date=reference_date))
 
     return "\n".join(lines)
 
