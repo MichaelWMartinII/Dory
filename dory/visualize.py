@@ -15,43 +15,68 @@ from .graph import Graph
 from .schema import ZONE_ACTIVE, ZONE_ARCHIVED, ZONE_EXPIRED
 
 _NODE_COLORS = {
-    "ENTITY":          "#4fc3f7",
-    "CONCEPT":         "#b39ddb",
-    "EVENT":           "#81c784",
-    "PREFERENCE":      "#ffb74d",
-    "BELIEF":          "#ef9a9a",
-    "SESSION":         "#90a4ae",
-    "SESSION_SUMMARY": "#4dd0e1",
-    "PROCEDURE":       "#ce93d8",
+    "ENTITY":          "#58a6ff",
+    "CONCEPT":         "#c084fc",
+    "EVENT":           "#4ade80",
+    "PREFERENCE":      "#fb923c",
+    "BELIEF":          "#f87171",
+    "SESSION":         "#64748b",
+    "SESSION_SUMMARY": "#22d3ee",
+    "PROCEDURE":       "#e879f9",
+    "WORKING":         "#facc15",
+}
+
+# Base opacity for edges by type — drives visual hierarchy
+_EDGE_BASE_OPACITY = {
+    "SUPERSEDES":        0.75,
+    "TEMPORALLY_AFTER":  0.55,
+    "TEMPORALLY_BEFORE": 0.55,
+    "SUPPORTS_FACT":     0.40,
+    "MENTIONS":          0.35,
+    "PREFERS":           0.35,
+    "WORKS_ON":          0.25,
+    "USES":              0.25,
+    "CO_OCCURS":         0.08,
 }
 
 _EDGE_COLORS = {
     "TEMPORALLY_AFTER":  "#d29922",
     "TEMPORALLY_BEFORE": "#d29922",
     "SUPERSEDES":        "#f85149",
-    "SUPPORTS_FACT":     "#4dd0e1",
-    "MENTIONS":          "#4dd0e1",
-    "PREFERS":           "#ffb74d",
+    "SUPPORTS_FACT":     "#22d3ee",
+    "MENTIONS":          "#22d3ee",
+    "PREFERS":           "#fb923c",
     "WORKS_ON":          "#58a6ff",
     "USES":              "#58a6ff",
-    "CO_OCCURS":         "#4a7fa5",
+    "CO_OCCURS":         "#334155",
 }
 
 _ZONE_OPACITY = {
     ZONE_ACTIVE:   1.0,
-    ZONE_ARCHIVED: 0.35,
-    ZONE_EXPIRED:  0.15,
+    ZONE_ARCHIVED: 0.28,
+    ZONE_EXPIRED:  0.10,
 }
 
 
 def _build_graph_data(graph: Graph, zones: list[str]) -> dict:
+    from collections import defaultdict
     node_ids: set[str] = set()
+    degree: dict[str, int] = defaultdict(int)
+
+    # First pass: collect node ids and compute degree
+    all_edges = graph.all_edges()
+    candidate_nodes = {n.id for n in graph.all_nodes(zone=None) if n.zone in zones}
+    for e in all_edges:
+        if e.source_id in candidate_nodes and e.target_id in candidate_nodes:
+            degree[e.source_id] += 1
+            degree[e.target_id] += 1
+
     nodes = []
     for n in graph.all_nodes(zone=None):
         if n.zone not in zones:
             continue
         node_ids.add(n.id)
-        label = n.content if len(n.content) <= 60 else n.content[:57] + "…"
+        label = n.content if len(n.content) <= 50 else n.content[:47] + "…"
         nodes.append({
             "id":               n.id,
             "label":            label,
@@ -62,6 +87,7 @@ def _build_graph_data(graph: Graph, zones: list[str]) -> dict:
             "zone":             n.zone,
             "tags":             n.tags,
             "activation_count": n.activation_count,
+            "degree":           degree[n.id],
             "created_at":       n.created_at[:10],
             "color":            _NODE_COLORS.get(n.type.value, "#888"),
             "opacity":          _ZONE_OPACITY.get(n.zone, 1.0),
@@ -69,14 +95,15 @@ def _build_graph_data(graph: Graph, zones: list[str]) -> dict:
         })
 
     links = []
-    for e in graph.all_edges():
+    for e in all_edges:
         if e.source_id in node_ids and e.target_id in node_ids:
             links.append({
-                "source": e.source_id,
-                "target": e.target_id,
-                "type":   e.type.value,
-                "weight": round(e.weight, 3),
-                "color":  _EDGE_COLORS.get(e.type.value, "#4a7fa5"),
+                "source":       e.source_id,
+                "target":       e.target_id,
+                "type":         e.type.value,
+                "weight":       round(e.weight, 3),
+                "color":        _EDGE_COLORS.get(e.type.value, "#334155"),
+                "base_opacity": _EDGE_BASE_OPACITY.get(e.type.value, 0.10),
             })
 
     return {"nodes": nodes, "links": links}
@@ -133,7 +160,7 @@ def open_visualization(
 
 
 # ---------------------------------------------------------------------------
-# HTML template
+# HTML template — v2
 # ---------------------------------------------------------------------------
 
 _HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -143,433 +170,281 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>Dory Memory Graph</title>
 __D3_SCRIPT_TAG__
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body {
-    background: #0d1117;
-    color: #c9d1d9;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
-    display: flex;
-    height: 100vh;
-    overflow: hidden;
-  }
+body {
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
 
-  #sidebar {
-    width: 300px;
-    min-width: 300px;
-    background: #161b22;
-    border-right: 1px solid #30363d;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+/* ── Sidebar ── */
+#sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: #0d1117;
+  border-right: 1px solid #21262d;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
-  #sidebar-header {
-    padding: 16px;
-    border-bottom: 1px solid #30363d;
-  }
+#sidebar-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #21262d;
+}
+#sidebar-header h1 { font-size: 16px; font-weight: 700; color: #f0f6fc; letter-spacing: 0.3px; }
+#sidebar-header p  { font-size: 11px; color: #484f58; margin-top: 2px; }
 
-  #sidebar-header h1 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #f0f6fc;
-    letter-spacing: 0.5px;
-  }
+#stats {
+  padding: 10px 16px;
+  border-bottom: 1px solid #21262d;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.stat { text-align: center; }
+.stat-val { font-size: 18px; font-weight: 700; color: #58a6ff; }
+.stat-lbl { font-size: 9px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
 
-  #sidebar-header p {
-    font-size: 12px;
-    color: #8b949e;
-    margin-top: 4px;
-  }
+/* ── Query panel ── */
+#query-panel {
+  padding: 10px 16px;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+#query-panel-title {
+  font-size: 10px; color: #484f58; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;
+}
+#query-input {
+  background: #161b22;
+  border: 1px solid #21262d;
+  color: #c9d1d9;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  width: 100%;
+  outline: none;
+  margin-bottom: 6px;
+}
+#query-input:focus { border-color: #58a6ff; }
+#query-input::placeholder { color: #30363d; }
 
-  #stats {
-    padding: 12px 16px;
-    border-bottom: 1px solid #30363d;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
+#query-examples { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.query-chip {
+  background: #161b22;
+  border: 1px solid #21262d;
+  color: #8b949e;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+}
+.query-chip:hover { border-color: #58a6ff; color: #c9d1d9; }
+.query-chip.active { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
 
-  .stat { text-align: center; }
-  .stat-val { font-size: 20px; font-weight: 700; color: #58a6ff; }
-  .stat-lbl { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+#route-badge { display: none; margin-bottom: 6px; }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+}
+.badge-graph    { background: #0d1f3c; color: #58a6ff; border: 1px solid #1d4ed8; }
+.badge-episodic { background: #0f2b0f; color: #4ade80; border: 1px solid #166534; }
+.badge-hybrid   { background: #2d1a00; color: #fb923c; border: 1px solid #92400e; }
 
-  /* ----- Query panel ----- */
-  #query-panel {
-    padding: 12px 16px;
-    border-bottom: 1px solid #30363d;
-  }
+#reasoning-section { display: none; }
+#reasoning-title {
+  font-size: 10px; color: #484f58; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 6px; margin-top: 8px;
+}
+.activated-item {
+  display: flex; flex-direction: column; gap: 2px;
+  background: #161b22; border-radius: 4px;
+  padding: 5px 8px; margin-bottom: 3px;
+  font-size: 11px; cursor: pointer; border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.activated-item:hover { border-color: #30363d; }
+.activated-item-header { display: flex; justify-content: space-between; align-items: center; }
+.activated-item-type { font-size: 10px; }
+.activated-item-label { color: #c9d1d9; line-height: 1.3; }
+.activation-bar-wrap { background: #0d1117; border-radius: 2px; height: 2px; margin-top: 3px; }
+.activation-bar { height: 2px; border-radius: 2px; transition: width 0.4s ease; }
 
-  #query-panel h3 {
-    font-size: 11px;
-    color: #8b949e;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-  }
+#clear-query {
+  display: none; background: none; border: none;
+  color: #484f58; font-size: 10px; cursor: pointer; padding: 2px 0;
+}
+#clear-query:hover { color: #8b949e; }
 
-  #query-input {
-    background: #0d1117;
-    border: 1px solid #30363d;
-    color: #c9d1d9;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    width: 100%;
-    outline: none;
-    margin-bottom: 6px;
-  }
-  #query-input:focus { border-color: #58a6ff; }
-  #query-input::placeholder { color: #484f58; }
+/* ── Legend ── */
+#legend {
+  padding: 10px 16px;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+#legend h3 { font-size: 10px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.legend-item {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 4px;
+  font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+  color: #8b949e; transition: all 0.15s;
+}
+.legend-item:hover { color: #c9d1d9; }
+.legend-item.dimmed { opacity: 0.3; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-  #query-examples {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-bottom: 8px;
-  }
+/* ── Edge legend ── */
+#edge-legend {
+  padding: 8px 16px;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+#edge-legend h3 { font-size: 10px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.edge-legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; font-size: 10px; color: #484f58; }
+.edge-swatch { width: 20px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+.edge-swatch.dashed {
+  background: repeating-linear-gradient(90deg, #f85149 0px, #f85149 4px, transparent 4px, transparent 8px);
+}
 
-  .query-chip {
-    background: #21262d;
-    border: 1px solid #30363d;
-    color: #8b949e;
-    padding: 3px 8px;
-    border-radius: 10px;
-    font-size: 10px;
-    cursor: pointer;
-    transition: all 0.15s;
-    line-height: 1.4;
-  }
-  .query-chip:hover { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
-  .query-chip.active { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
+/* ── Zone controls ── */
+#zone-controls {
+  padding: 8px 16px;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+#zone-controls h3 { font-size: 10px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.zone-btn {
+  background: #161b22; border: 1px solid #21262d; color: #484f58;
+  padding: 3px 8px; border-radius: 4px; font-size: 10px;
+  cursor: pointer; margin-right: 4px; transition: all 0.15s;
+}
+.zone-btn.active { background: #0d1f3c; border-color: #1d4ed8; color: #58a6ff; }
 
-  #route-badge {
-    display: none;
-    margin-bottom: 6px;
-  }
+/* ── Inspector (right panel) ── */
+#inspector {
+  width: 0; min-width: 0; overflow: hidden;
+  background: #0d1117; border-left: 1px solid #21262d;
+  transition: width 0.25s ease; flex-shrink: 0;
+}
+#inspector.open { width: 320px; min-width: 320px; }
+#inspector-inner {
+  width: 320px; height: 100vh; overflow-y: auto;
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+}
+#inspector-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+}
+#inspector-badges { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; flex: 1; }
+#inspector-type-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; padding: 3px 10px; border-radius: 10px; border: 1px solid;
+}
+.core-badge {
+  display: inline-block; background: #1c1400; border: 1px solid #bb8009;
+  color: #d29922; font-size: 9px; padding: 1px 6px; border-radius: 10px;
+}
+.archived-badge {
+  display: inline-block; background: #1c0000; border: 1px solid #f85149;
+  color: #f85149; font-size: 9px; padding: 1px 6px; border-radius: 10px;
+}
+#inspector-close {
+  background: none; border: none; color: #484f58; font-size: 16px;
+  cursor: pointer; padding: 0; line-height: 1; flex-shrink: 0;
+}
+#inspector-close:hover { color: #c9d1d9; }
+#inspector-content-text {
+  font-size: 13px; color: #e6edf3; line-height: 1.6;
+  background: #161b22; padding: 10px 12px; border-radius: 6px;
+  border: 1px solid #21262d; white-space: pre-wrap; word-break: break-word;
+}
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.meta-item { display: flex; flex-direction: column; gap: 1px; }
+.meta-key { font-size: 9px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
+.meta-val { font-size: 12px; color: #58a6ff; font-family: monospace; }
+.inspector-section-title {
+  font-size: 9px; color: #484f58; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 5px;
+}
+.conn-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #161b22; border: 1px solid transparent; border-radius: 4px;
+  padding: 6px 8px; margin-bottom: 3px; cursor: pointer; font-size: 11px;
+  transition: border-color 0.15s;
+}
+.conn-item:hover { border-color: #30363d; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.conn-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.conn-edge-type { font-size: 9px; color: #484f58; }
+.conn-label { color: #c9d1d9; word-break: break-word; }
 
-  .badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-  }
-  .badge-graph    { background: #0d1f3c; color: #58a6ff; border: 1px solid #58a6ff; }
-  .badge-episodic { background: #0f2b0f; color: #56d364; border: 1px solid #56d364; }
-  .badge-hybrid   { background: #2d1a00; color: #f0883e; border: 1px solid #f0883e; }
+/* ── Nav sections dimming on node select ── */
+#nav-sections { transition: opacity 0.2s; }
+#nav-sections.dimmed { opacity: 0.3; pointer-events: none; }
 
-  #activation-list {
-    display: none;
-  }
+/* ── Graph area ── */
+#graph-area { flex: 1; position: relative; overflow: hidden; }
 
-  .activated-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    background: #21262d;
-    border-radius: 4px;
-    padding: 5px 8px;
-    margin-bottom: 3px;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .activated-item:hover { background: #30363d; }
-  .activated-item-header { display: flex; justify-content: space-between; align-items: center; }
-  .activated-item-type { color: #58a6ff; font-size: 10px; }
-  .activated-item-label { color: #c9d1d9; line-height: 1.3; }
-  .activation-bar-wrap { background: #0d1117; border-radius: 2px; height: 3px; margin-top: 2px; }
-  .activation-bar { height: 3px; background: #58a6ff; border-radius: 2px; transition: width 0.3s; }
+#offline-notice {
+  display: none; margin: 16px; padding: 14px 16px; border-radius: 10px;
+  border: 1px solid #21262d; background: #161b22; color: #c9d1d9;
+  font-size: 12px; line-height: 1.5;
+}
+#offline-notice strong { color: #f0f6fc; }
+#offline-notice code { color: #58a6ff; }
 
-  #clear-query {
-    display: none;
-    background: none;
-    border: none;
-    color: #8b949e;
-    font-size: 11px;
-    cursor: pointer;
-    padding: 2px 0;
-    text-decoration: underline;
-  }
-  #clear-query:hover { color: #c9d1d9; }
+#fallback-view {
+  display: none; padding: 16px; overflow-y: auto; height: calc(100vh - 52px);
+}
+.fallback-section {
+  margin-bottom: 18px; background: #161b22; border: 1px solid #21262d;
+  border-radius: 10px; padding: 14px 16px;
+}
+.fallback-section h3 { font-size: 11px; color: #484f58; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; }
+.fallback-row { padding: 7px 0; border-top: 1px solid #161b22; font-size: 11px; line-height: 1.5; }
+.fallback-row:first-child { border-top: none; padding-top: 0; }
+.fallback-type { color: #58a6ff; font-size: 10px; }
+.fallback-meta { color: #484f58; font-size: 10px; }
 
-  /* ----- Legend ----- */
-  #legend {
-    padding: 12px 16px;
-    border-bottom: 1px solid #30363d;
-  }
+svg { width: 100%; height: 100%; }
 
-  #legend h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.link { transition: stroke-opacity 0.2s; }
+.node circle { cursor: pointer; }
+.node.selected circle { filter: brightness(1.3); }
 
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 5px;
-    font-size: 12px;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: background 0.15s;
-  }
-  .legend-item:hover { background: #21262d; }
-  .legend-item.dimmed { opacity: 0.4; }
+.node-label {
+  font-size: 10px; fill: #8b949e; pointer-events: none; text-anchor: middle;
+}
+.node-label.hidden { display: none; }
 
-  .legend-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
+.core-ring { fill: none; stroke: #d29922; stroke-width: 2px; pointer-events: none; }
 
-  /* ----- Edge legend ----- */
-  #edge-legend {
-    padding: 10px 16px;
-    border-bottom: 1px solid #30363d;
-  }
-  #edge-legend h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-  .edge-legend-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-    font-size: 11px;
-    color: #8b949e;
-  }
-  .edge-swatch {
-    width: 24px;
-    height: 2px;
-    border-radius: 1px;
-    flex-shrink: 0;
-  }
-  .edge-swatch.dashed {
-    background: repeating-linear-gradient(90deg, #f85149 0px, #f85149 5px, transparent 5px, transparent 9px);
-    height: 2px;
-  }
+.edge-label {
+  font-size: 9px; fill: #484f58; pointer-events: none; text-anchor: middle;
+}
 
-  /* ----- Zone controls ----- */
-  #zone-controls {
-    padding: 10px 16px;
-    border-bottom: 1px solid #30363d;
-  }
-  #zone-controls h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-  .zone-btn {
-    background: #21262d;
-    border: 1px solid #30363d;
-    color: #8b949e;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    cursor: pointer;
-    margin-right: 4px;
-    transition: all 0.15s;
-  }
-  .zone-btn.active { background: #0d419d; border-color: #58a6ff; color: #58a6ff; }
+#tooltip {
+  position: absolute; background: #161b22; border: 1px solid #30363d;
+  border-radius: 6px; padding: 7px 10px; font-size: 11px;
+  pointer-events: none; opacity: 0; transition: opacity 0.1s;
+  max-width: 220px; z-index: 100;
+}
+#tooltip .tt-type { color: #58a6ff; font-size: 9px; text-transform: uppercase; }
+#tooltip .tt-content { color: #f0f6fc; margin-top: 2px; line-height: 1.4; }
 
-  /* ----- Detail panel ----- */
-  #detail-panel {
-    flex: 1;
-    padding: 16px;
-    overflow-y: auto;
-  }
-
-  #detail-panel h3 {
-    font-size: 11px;
-    color: #8b949e;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 10px;
-  }
-
-  #detail-content {
-    font-size: 12px;
-    line-height: 1.6;
-    color: #8b949e;
-  }
-
-  .detail-node-content {
-    color: #c9d1d9;
-    font-size: 13px;
-    margin-bottom: 12px;
-    line-height: 1.5;
-  }
-
-  .detail-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 4px;
-  }
-
-  .detail-key { color: #8b949e; }
-  .detail-val { color: #58a6ff; font-family: monospace; }
-
-  .core-badge {
-    display: inline-block;
-    background: #2d2000;
-    border: 1px solid #bb8009;
-    color: #d29922;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 10px;
-    margin-bottom: 8px;
-  }
-
-  .archived-badge {
-    display: inline-block;
-    background: #2d1010;
-    border: 1px solid #f85149;
-    color: #f85149;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 10px;
-    margin-bottom: 8px;
-    margin-left: 4px;
-  }
-
-  .connected-node {
-    background: #21262d;
-    border-radius: 4px;
-    padding: 5px 8px;
-    margin-bottom: 4px;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .connected-node:hover { background: #30363d; }
-  .connected-node .edge-type { font-size: 10px; }
-  .connected-node .node-label { color: #c9d1d9; }
-
-  /* ----- Graph area ----- */
-  #graph-area {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-  }
-
-  #offline-notice {
-    display: none;
-    margin: 16px;
-    padding: 14px 16px;
-    border-radius: 10px;
-    border: 1px solid #30363d;
-    background: #161b22;
-    color: #c9d1d9;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  #offline-notice strong { color: #f0f6fc; }
-  #offline-notice code { color: #58a6ff; }
-
-  #fallback-view {
-    display: none;
-    padding: 16px;
-    overflow-y: auto;
-    height: calc(100vh - 52px);
-  }
-
-  .fallback-section {
-    margin-bottom: 18px;
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-
-  .fallback-section h3 {
-    font-size: 12px;
-    color: #8b949e;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    margin-bottom: 10px;
-  }
-
-  .fallback-row {
-    padding: 8px 0;
-    border-top: 1px solid #21262d;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  .fallback-row:first-child { border-top: none; padding-top: 0; }
-  .fallback-type { color: #58a6ff; font-size: 11px; }
-  .fallback-meta { color: #8b949e; font-size: 11px; }
-
-  svg {
-    width: 100%;
-    height: 100%;
-  }
-
-  .link {
-    stroke-opacity: 0.55;
-  }
-
-  .node circle {
-    cursor: pointer;
-    transition: filter 0.15s;
-  }
-
-  .node circle:hover { filter: brightness(1.3); }
-  .node.selected circle { filter: brightness(1.4); }
-
-  .node-label {
-    font-size: 10px;
-    fill: #8b949e;
-    pointer-events: none;
-    text-anchor: middle;
-  }
-
-  .core-ring {
-    fill: none;
-    stroke: #d29922;
-    stroke-width: 2px;
-    pointer-events: none;
-  }
-
-  .edge-label {
-    font-size: 9px;
-    fill: #484f58;
-    pointer-events: none;
-    text-anchor: middle;
-  }
-
-  #tooltip {
-    position: absolute;
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 12px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    max-width: 240px;
-    z-index: 100;
-  }
-
-  #tooltip .tt-type { color: #58a6ff; font-size: 10px; text-transform: uppercase; }
-  #tooltip .tt-content { color: #f0f6fc; margin-top: 2px; line-height: 1.4; }
-
-  #search-bar {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 10;
-  }
-
-  #search-input {
-    background: #161b22;
-    border: 1px solid #30363d;
-    color: #c9d1d9;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    width: 200px;
-    outline: none;
-  }
-  #search-input:focus { border-color: #58a6ff; }
-  #search-input::placeholder { color: #484f58; }
+#search-bar { position: absolute; top: 12px; right: 12px; z-index: 10; }
+#search-input {
+  background: #161b22; border: 1px solid #21262d;
+  color: #c9d1d9; padding: 5px 10px; border-radius: 6px;
+  font-size: 11px; width: 190px; outline: none;
+}
+#search-input:focus { border-color: #58a6ff; }
+#search-input::placeholder { color: #30363d; }
 </style>
 </head>
 <body>
@@ -577,7 +452,7 @@ __D3_SCRIPT_TAG__
 <div id="sidebar">
   <div id="sidebar-header">
     <h1>Dory Memory</h1>
-    <p>Knowledge graph visualization</p>
+    <p>Knowledge graph · spreading activation</p>
   </div>
 
   <div id="stats">
@@ -587,49 +462,47 @@ __D3_SCRIPT_TAG__
     <div class="stat"><div class="stat-val" id="s-archived">0</div><div class="stat-lbl">Archived</div></div>
   </div>
 
-  <!-- Query mode -->
   <div id="query-panel">
-    <h3>Query Memory</h3>
+    <div id="query-panel-title">Query Memory</div>
     <input id="query-input" type="text" placeholder="Ask a question…">
     <div id="query-examples"></div>
     <div id="route-badge"></div>
-    <button id="clear-query" onclick="clearQuery()">✕ clear query</button>
-    <div id="activation-list"></div>
+    <div id="reasoning-section">
+      <div id="reasoning-title">Why these surfaced</div>
+      <div id="activation-list"></div>
+    </div>
+    <button id="clear-query" onclick="clearQuery()">✕ clear</button>
   </div>
 
-  <div id="legend">
-    <h3>Node Types</h3>
-    <div class="legend-item" data-type="ENTITY">          <div class="legend-dot" style="background:#4fc3f7"></div> Entity</div>
-    <div class="legend-item" data-type="CONCEPT">         <div class="legend-dot" style="background:#b39ddb"></div> Concept</div>
-    <div class="legend-item" data-type="EVENT">           <div class="legend-dot" style="background:#81c784"></div> Event</div>
-    <div class="legend-item" data-type="PREFERENCE">      <div class="legend-dot" style="background:#ffb74d"></div> Preference</div>
-    <div class="legend-item" data-type="BELIEF">          <div class="legend-dot" style="background:#ef9a9a"></div> Belief</div>
-    <div class="legend-item" data-type="SESSION">         <div class="legend-dot" style="background:#90a4ae"></div> Session</div>
-    <div class="legend-item" data-type="SESSION_SUMMARY"> <div class="legend-dot" style="background:#4dd0e1"></div> Session Summary</div>
-    <div class="legend-item" data-type="PROCEDURE">       <div class="legend-dot" style="background:#ce93d8"></div> Procedure</div>
-  </div>
+  <div id="nav-sections">
+    <div id="legend">
+      <h3>Node Types</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+        <div class="legend-item" data-type="ENTITY">       <div class="legend-dot" style="background:#58a6ff"></div>Entity</div>
+        <div class="legend-item" data-type="CONCEPT">      <div class="legend-dot" style="background:#c084fc"></div>Concept</div>
+        <div class="legend-item" data-type="EVENT">        <div class="legend-dot" style="background:#4ade80"></div>Event</div>
+        <div class="legend-item" data-type="PREFERENCE">   <div class="legend-dot" style="background:#fb923c"></div>Preference</div>
+        <div class="legend-item" data-type="BELIEF">       <div class="legend-dot" style="background:#f87171"></div>Belief</div>
+        <div class="legend-item" data-type="WORKING">      <div class="legend-dot" style="background:#facc15"></div>Working</div>
+        <div class="legend-item" data-type="SESSION_SUMMARY"><div class="legend-dot" style="background:#22d3ee"></div>Episodic</div>
+        <div class="legend-item" data-type="PROCEDURE">    <div class="legend-dot" style="background:#e879f9"></div>Procedure</div>
+      </div>
+    </div>
 
-  <div id="edge-legend">
-    <h3>Edge Types</h3>
-    <div class="edge-legend-item"><div class="edge-swatch" style="background:#58a6ff"></div> WORKS_ON / USES</div>
-    <div class="edge-legend-item"><div class="edge-swatch" style="background:#ffb74d"></div> PREFERS</div>
-    <div class="edge-legend-item"><div class="edge-swatch" style="background:#4dd0e1"></div> SUPPORTS_FACT / MENTIONS</div>
-    <div class="edge-legend-item"><div class="edge-swatch" style="background:#d29922"></div> TEMPORALLY_AFTER</div>
-    <div class="edge-legend-item"><div class="edge-swatch" style="background:#4a7fa5"></div> CO_OCCURS</div>
-    <div class="edge-legend-item"><div class="edge-swatch dashed"></div> SUPERSEDES (archived)</div>
-  </div>
+    <div id="edge-legend">
+      <h3>Edge Types</h3>
+      <div class="edge-legend-item"><div class="edge-swatch dashed"></div>SUPERSEDES</div>
+      <div class="edge-legend-item"><div class="edge-swatch" style="background:#d29922"></div>TEMPORALLY_AFTER</div>
+      <div class="edge-legend-item"><div class="edge-swatch" style="background:#22d3ee"></div>SUPPORTS_FACT</div>
+      <div class="edge-legend-item"><div class="edge-swatch" style="background:#58a6ff"></div>WORKS_ON / USES</div>
+      <div class="edge-legend-item"><div class="edge-swatch" style="background:#334155;opacity:0.5"></div>CO_OCCURS</div>
+    </div>
 
-  <div id="zone-controls">
-    <h3>Zones</h3>
-    <button class="zone-btn active" data-zone="active">Active</button>
-    <button class="zone-btn active" data-zone="archived">Archived</button>
-    <button class="zone-btn" data-zone="expired">Expired</button>
-  </div>
-
-  <div id="detail-panel">
-    <h3>Node Detail</h3>
-    <div id="detail-content">
-      <span style="color:#484f58">Click a node to inspect it.</span>
+    <div id="zone-controls">
+      <h3>Zones</h3>
+      <button class="zone-btn active" data-zone="active">Active</button>
+      <button class="zone-btn active" data-zone="archived">Archived</button>
+      <button class="zone-btn" data-zone="expired">Expired</button>
     </div>
   </div>
 </div>
@@ -647,20 +520,33 @@ __D3_SCRIPT_TAG__
   <svg id="graph-svg"></svg>
 </div>
 
+<div id="inspector">
+  <div id="inspector-inner">
+    <div id="inspector-header">
+      <div id="inspector-badges">
+        <span id="inspector-type-badge"></span>
+      </div>
+      <button id="inspector-close" onclick="clearSelection()">✕</button>
+    </div>
+    <div id="inspector-content-text"></div>
+    <div class="meta-grid" id="inspector-meta"></div>
+    <div id="inspector-connections" style="display:none">
+      <div class="inspector-section-title" id="inspector-conn-title"></div>
+      <div id="inspector-conn-list"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const RAW_DATA    = __GRAPH_DATA__;
 const RAW_STATS   = __GRAPH_STATS__;
 const DEMO_QUERIES = __DEMO_QUERIES__;
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+function escapeHtml(v) {
+  return String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
 }
 
+// ── Fallback (no D3) ──
 function renderFallbackView() {
   document.getElementById("graph-svg").style.display = "none";
   document.getElementById("tooltip").style.display = "none";
@@ -671,45 +557,17 @@ function renderFallbackView() {
 
   const notice = document.getElementById("offline-notice");
   notice.style.display = "block";
-  notice.innerHTML =
-    "<strong>Local-only mode</strong><br>" +
-    "Interactive graph rendering is disabled because this HTML was generated without remote JavaScript. " +
-    "The full node and edge data are still available below. " +
-    "Regenerate with <code>allow_remote_js=True</code> if you explicitly want the remote D3 view.";
+  notice.innerHTML = "<strong>Local-only mode</strong><br>Regenerate with <code>allow_remote_js=True</code> for the interactive graph.";
 
   const fallback = document.getElementById("fallback-view");
   fallback.style.display = "block";
-
-  const nodeRows = RAW_DATA.nodes
-    .map(n => `
-      <div class="fallback-row">
-        <div class="fallback-type">${escapeHtml(n.type)}${n.is_core ? " [CORE]" : ""}</div>
-        <div>${escapeHtml(n.full)}</div>
-        <div class="fallback-meta">zone=${escapeHtml(n.zone)} · salience=${escapeHtml(n.salience)} · activations=${escapeHtml(n.activation_count)}</div>
-      </div>`)
-    .join("");
-
-  const edgeRows = RAW_DATA.links
-    .map(e => `
-      <div class="fallback-row">
-        <div class="fallback-type">${escapeHtml(e.type)}</div>
-        <div>${escapeHtml(e.source)} → ${escapeHtml(e.target)}</div>
-        <div class="fallback-meta">weight=${escapeHtml(e.weight)}</div>
-      </div>`)
-    .join("");
-
-  fallback.innerHTML = `
-    <div class="fallback-section">
-      <h3>Nodes (${RAW_DATA.nodes.length})</h3>
-      ${nodeRows || '<div class="fallback-row">No nodes.</div>'}
-    </div>
-    <div class="fallback-section">
-      <h3>Edges (${RAW_DATA.links.length})</h3>
-      ${edgeRows || '<div class="fallback-row">No edges.</div>'}
-    </div>`;
-
-  document.getElementById("detail-content").innerHTML =
-    '<span style="color:#8b949e">Local-only fallback view. The interactive graph is disabled.</span>';
+  const nodeRows = RAW_DATA.nodes.map(n => `
+    <div class="fallback-row">
+      <div class="fallback-type">${escapeHtml(n.type)}${n.is_core?" [CORE]":""}</div>
+      <div>${escapeHtml(n.full)}</div>
+      <div class="fallback-meta">zone=${escapeHtml(n.zone)} · salience=${escapeHtml(n.salience)} · deg=${escapeHtml(n.degree)}</div>
+    </div>`).join("");
+  fallback.innerHTML = `<div class="fallback-section"><h3>Nodes (${RAW_DATA.nodes.length})</h3>${nodeRows}</div>`;
 }
 
 if (!window.d3) {
@@ -720,19 +578,23 @@ if (!window.d3) {
   renderFallbackView();
 } else {
 
-// Populate stats
 document.getElementById("s-nodes").textContent    = RAW_STATS.nodes      ?? 0;
 document.getElementById("s-edges").textContent    = RAW_STATS.edges      ?? 0;
 document.getElementById("s-core").textContent     = RAW_STATS.core_nodes ?? 0;
 document.getElementById("s-archived").textContent = RAW_STATS.archived   ?? 0;
 
-// ---- State ----
-let activeZones   = new Set(["active", "archived"]);
-let hiddenTypes   = new Set();
-let selectedNode  = null;
-let activeQuery   = null;
+// ── State ──
+let activeZones  = new Set(["active", "archived"]);
+let hiddenTypes  = new Set();
+let selectedNode = null;
+let activeQuery  = null;
 
-// ---- Build query chips ----
+// ── Compute top-N nodes by degree for always-on labels ──
+const TOP_LABEL_COUNT = 8;
+const sortedByDegree = [...RAW_DATA.nodes].sort((a,b) => b.degree - a.degree);
+const topLabelIds = new Set(sortedByDegree.slice(0, TOP_LABEL_COUNT).map(n => n.id));
+
+// ── Query chips ──
 const examplesEl = document.getElementById("query-examples");
 DEMO_QUERIES.forEach((q, i) => {
   const chip = document.createElement("button");
@@ -743,67 +605,63 @@ DEMO_QUERIES.forEach((q, i) => {
 });
 
 document.getElementById("query-input").addEventListener("keydown", e => {
-  if (e.key === "Enter") {
-    const text = e.target.value.trim();
-    if (!text) return;
-    const idx = DEMO_QUERIES.findIndex(q =>
-      q.text.toLowerCase().includes(text.toLowerCase()) ||
-      text.toLowerCase().includes(q.text.toLowerCase().split(" ")[0])
-    );
-    if (idx >= 0) runQuery(idx);
-  }
+  if (e.key !== "Enter") return;
+  const text = e.target.value.trim();
+  if (!text) return;
+  const idx = DEMO_QUERIES.findIndex(q =>
+    q.text.toLowerCase().includes(text.toLowerCase()) ||
+    text.toLowerCase().includes(q.text.toLowerCase().split(" ")[0])
+  );
+  if (idx >= 0) runQuery(idx);
 });
 
-// ---- SVG setup ----
+// ── SVG setup ──
 const svg    = d3.select("#graph-svg");
 const width  = () => document.getElementById("graph-area").clientWidth;
 const height = () => document.getElementById("graph-area").clientHeight;
-
 const container = svg.append("g");
 
 svg.call(
-  d3.zoom()
-    .scaleExtent([0.1, 4])
-    .on("zoom", (event) => container.attr("transform", event.transform))
+  d3.zoom().scaleExtent([0.05, 5])
+    .on("zoom", event => container.attr("transform", event.transform))
 );
 
-// Arrow marker
-svg.append("defs").append("marker")
-  .attr("id", "arrowhead")
+// Arrowhead
+svg.append("defs").selectAll("marker")
+  .data(["default", "supersedes", "temporal"])
+  .join("marker")
+  .attr("id", d => `arrow-${d}`)
   .attr("viewBox", "0 -4 8 8")
-  .attr("refX", 18).attr("refY", 0)
-  .attr("markerWidth", 6).attr("markerHeight", 6)
+  .attr("refX", 22).attr("refY", 0)
+  .attr("markerWidth", 5).attr("markerHeight", 5)
   .attr("orient", "auto")
   .append("path")
     .attr("d", "M0,-4L8,0L0,4")
-    .attr("fill", "#30363d");
+    .attr("fill", d => d === "supersedes" ? "#f85149" : d === "temporal" ? "#d29922" : "#30363d");
 
-// ---- Simulation ----
-let simulation = null;
-let linkSel, nodeSel, labelSel, coreRingSel, edgeLabelSel;
-
+// ── Node sizing ──
 function nodeRadius(d) {
-  const base = 8 + d.salience * 16;
-  return Math.max(8, Math.min(24, base));
+  const r = 5 + d.degree * 1.8 + d.salience * 8;
+  return Math.max(5, Math.min(28, r));
 }
 
+// ── Visible data ──
 function visibleData() {
-  const nodes = RAW_DATA.nodes.filter(n =>
-    activeZones.has(n.zone) && !hiddenTypes.has(n.type)
-  );
+  const nodes = RAW_DATA.nodes.filter(n => activeZones.has(n.zone) && !hiddenTypes.has(n.type));
   const nodeIds = new Set(nodes.map(n => n.id));
   const links = RAW_DATA.links.filter(l =>
-    nodeIds.has(l.source.id ?? l.source) &&
-    nodeIds.has(l.target.id ?? l.target)
+    nodeIds.has(l.source.id ?? l.source) && nodeIds.has(l.target.id ?? l.target)
   );
   return { nodes, links };
 }
 
+// ── Main build ──
+let simulation = null;
+let linkSel, nodeGroupSel, labelSel, coreRingSel, edgeLabelSel;
+
 function buildGraph() {
   container.selectAll("*").remove();
-
   const { nodes, links } = visibleData();
-
   const nodesCopy = nodes.map(d => ({ ...d }));
   const nodeMap   = new Map(nodesCopy.map(d => [d.id, d]));
   const linksCopy = links.map(l => ({
@@ -814,32 +672,37 @@ function buildGraph() {
 
   if (simulation) simulation.stop();
   simulation = d3.forceSimulation(nodesCopy)
-    .force("link",    d3.forceLink(linksCopy).id(d => d.id).distance(d => 55 + (1 - d.weight) * 40).strength(0.8))
-    .force("charge",  d3.forceManyBody().strength(d => -150 - d.salience * 180))
-    .force("x",       d3.forceX(width() / 2).strength(0.06))
-    .force("y",       d3.forceY(height() / 2).strength(0.06))
-    .force("collide", d3.forceCollide(d => nodeRadius(d) + 5))
-    .alphaDecay(0.012)
-    .velocityDecay(0.35);
+    .force("link",    d3.forceLink(linksCopy).id(d => d.id).distance(d => 60 + (1 - d.weight) * 50).strength(0.7))
+    .force("charge",  d3.forceManyBody().strength(d => -200 - d.degree * 30 - d.salience * 150))
+    .force("x",       d3.forceX(width()  / 2).strength(0.05))
+    .force("y",       d3.forceY(height() / 2).strength(0.05))
+    .force("collide", d3.forceCollide(d => nodeRadius(d) + 6))
+    .alphaDecay(0.010)
+    .velocityDecay(0.38);
 
-  // Links — colored by type, dashed for SUPERSEDES
+  // ── Links ──
   linkSel = container.append("g").selectAll("line")
     .data(linksCopy).join("line")
     .attr("class", "link")
-    .attr("stroke",           d => d.color || "#4a7fa5")
-    .attr("stroke-width",     d => d.type === "SUPERSEDES" ? 2 : Math.max(1, d.weight * 2.5))
-    .attr("stroke-dasharray", d => d.type === "SUPERSEDES" ? "6,3" : null)
-    .attr("marker-end", "url(#arrowhead)");
+    .attr("stroke",       d => d.color)
+    .attr("stroke-width", d => d.type === "SUPERSEDES" ? 1.5 : Math.max(0.8, d.weight * 2))
+    .attr("stroke-dasharray", d => d.type === "SUPERSEDES" ? "5,3" : null)
+    .attr("stroke-opacity", d => d.base_opacity)
+    .attr("marker-end", d =>
+      d.type === "SUPERSEDES" ? "url(#arrow-supersedes)" :
+      d.type.startsWith("TEMPORALLY") ? "url(#arrow-temporal)" :
+      "url(#arrow-default)"
+    );
 
-  // Edge labels (shown on hover)
+  // ── Edge labels (hover) ──
   edgeLabelSel = container.append("g").selectAll("text")
     .data(linksCopy).join("text")
     .attr("class", "edge-label")
     .text(d => d.type)
     .style("display", "none");
 
-  // Nodes
-  const nodeGroup = container.append("g").selectAll("g")
+  // ── Nodes ──
+  nodeGroupSel = container.append("g").selectAll("g")
     .data(nodesCopy).join("g")
     .attr("class", "node")
     .call(
@@ -849,75 +712,81 @@ function buildGraph() {
         .on("end",   (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
     );
 
-  nodeGroup.append("circle")
-    .attr("r",      d => nodeRadius(d))
-    .attr("fill",   d => d.color)
+  nodeGroupSel.append("circle")
+    .attr("r",    d => nodeRadius(d))
+    .attr("fill", d => d.zone === "archived" ? "#1c1c1c" : d.color)
     .attr("fill-opacity", d => d.opacity)
-    .attr("stroke", d => d.zone === "archived" ? "#f85149" : "none")
-    .attr("stroke-dasharray", d => d.zone === "archived" ? "4,2" : null)
-    .attr("stroke-width", 1.5);
+    .attr("stroke", d => d.zone === "archived" ? "#f8514966" : "none")
+    .attr("stroke-width", d => d.zone === "archived" ? 1.5 : 0)
+    .attr("stroke-dasharray", d => d.zone === "archived" ? "3,2" : null);
 
   // Core ring
-  coreRingSel = nodeGroup.filter(d => d.is_core)
+  coreRingSel = nodeGroupSel.filter(d => d.is_core)
     .append("circle")
     .attr("class", "core-ring")
     .attr("r", d => nodeRadius(d) + 4);
 
-  // Labels
-  labelSel = nodeGroup.append("text")
+  // ── Labels — only top-N + hovered + selected shown by default ──
+  labelSel = nodeGroupSel.append("text")
     .attr("class", "node-label")
-    .attr("dy", d => nodeRadius(d) + 12)
-    .text(d => d.label.length > 28 ? d.label.slice(0, 26) + "…" : d.label)
-    .style("display", null);
+    .attr("dy", d => nodeRadius(d) + 11)
+    .text(d => d.label.length > 22 ? d.label.slice(0, 20) + "…" : d.label)
+    .attr("opacity", d => topLabelIds.has(d.id) ? 0.7 : 0);
 
-  // Tooltip
+  // ── Tooltip + interactions ──
   const tooltip = document.getElementById("tooltip");
-  nodeGroup
+  nodeGroupSel
     .on("mouseover", (event, d) => {
-      const archivedTag = d.zone === "archived" ? " ⚠ ARCHIVED" : "";
-      document.getElementById("tt-type").textContent    = d.type + (d.is_core ? " ★ CORE" : "") + archivedTag;
+      // Show label on hover
+      d3.select(event.currentTarget).select(".node-label").attr("opacity", 1);
+      document.getElementById("tt-type").textContent =
+        d.type + (d.is_core ? " ★" : "") + (d.zone === "archived" ? " ⚠" : "");
       document.getElementById("tt-content").textContent = d.label;
       tooltip.style.opacity = "1";
     })
-    .on("mousemove", (event) => {
-      tooltip.style.left = (event.offsetX + 12) + "px";
+    .on("mousemove", event => {
+      tooltip.style.left = (event.offsetX + 14) + "px";
       tooltip.style.top  = (event.offsetY - 8)  + "px";
     })
-    .on("mouseout",  () => { tooltip.style.opacity = "0"; })
+    .on("mouseout", (event, d) => {
+      if (selectedNode !== d.id && !topLabelIds.has(d.id)) {
+        d3.select(event.currentTarget).select(".node-label").attr("opacity", 0);
+      }
+      tooltip.style.opacity = "0";
+    })
     .on("click", (event, d) => {
       event.stopPropagation();
-      selectNode(d, nodeGroup, linksCopy, nodeMap);
+      selectNode(d, nodeGroupSel, linksCopy, nodeMap);
     });
 
-  // Edge label on hover
+  // Edge hover — show label
   linkSel
     .on("mouseover", function(event, d) {
-      d3.select(this).attr("stroke-opacity", 1).attr("stroke-width", d => Math.max(2, d.weight * 4));
+      d3.select(this).attr("stroke-opacity", Math.min(1, d.base_opacity + 0.4));
       const idx = linksCopy.indexOf(d);
-      edgeLabelSel.filter((_, i) => i === idx).style("display", null);
+      edgeLabelSel.filter((_,i) => i === idx).style("display", null);
     })
-    .on("mouseout",  function(event, d) {
-      d3.select(this).attr("stroke-opacity", 0.55).attr("stroke-width", d => d.type === "SUPERSEDES" ? 2 : Math.max(1, d.weight * 2.5));
+    .on("mouseout", function(event, d) {
+      if (activeQuery === null && selectedNode === null) {
+        d3.select(this).attr("stroke-opacity", d.base_opacity);
+      }
       edgeLabelSel.style("display", "none");
     });
 
-  svg.on("click", () => clearSelection(nodeGroup));
+  svg.on("click", () => clearSelection());
 
   simulation.on("tick", () => {
     linkSel
       .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
       .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-
     edgeLabelSel
       .attr("x", d => (d.source.x + d.target.x) / 2)
       .attr("y", d => (d.source.y + d.target.y) / 2);
-
-    nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+    nodeGroupSel.attr("transform", d => `translate(${d.x},${d.y})`);
   });
 
   simulation.on("end", () => fitToView(nodesCopy));
 
-  // Re-apply active query highlight if any
   if (activeQuery !== null) applyQueryHighlight(activeQuery);
 }
 
@@ -930,79 +799,88 @@ function fitToView(nodes) {
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   const y0 = Math.min(...ys), y1 = Math.max(...ys);
   const w = width(), h = height();
-  const scale = Math.min(0.95, Math.min(w / (x1 - x0 + pad * 2), h / (y1 - y0 + pad * 2)));
+  const scale = Math.min(0.92, Math.min(w / (x1 - x0 + pad * 2), h / (y1 - y0 + pad * 2)));
   const tx = w / 2 - scale * (x0 + x1) / 2;
   const ty = h / 2 - scale * (y0 + y1) / 2;
-  svg.transition().duration(700).call(
-    d3.zoom().transform,
-    d3.zoomIdentity.translate(tx, ty).scale(scale)
+  svg.transition().duration(800).call(
+    d3.zoom().transform, d3.zoomIdentity.translate(tx, ty).scale(scale)
   );
 }
 
-// ---- Query mode ----
+// ── Query mode ──
 function runQuery(idx) {
   activeQuery = idx;
   const q = DEMO_QUERIES[idx];
-
-  // Update chip styles
-  document.querySelectorAll(".query-chip").forEach((c, i) => {
-    c.classList.toggle("active", i === idx);
-  });
+  document.querySelectorAll(".query-chip").forEach((c, i) => c.classList.toggle("active", i === idx));
   document.getElementById("query-input").value = q.text;
 
-  // Routing badge
   const badgeEl = document.getElementById("route-badge");
   badgeEl.style.display = "block";
   badgeEl.innerHTML = `Route: <span class="badge badge-${q.route}">${q.route}</span>`;
 
-  // Activation list
+  // Rank-decay the activation scores for visual differentiation
+  const entries = Object.entries(q.activated).sort((a,b) => b[1] - a[1]);
+  const ranked  = {};
+  entries.forEach(([nid, _], i) => {
+    ranked[nid] = Math.max(0.2, 1.0 - i * 0.042);
+  });
+
+  const reasoningEl = document.getElementById("reasoning-section");
   const listEl = document.getElementById("activation-list");
-  listEl.style.display = "block";
-  const sorted = Object.entries(q.activated).sort((a, b) => b[1] - a[1]).slice(0, 7);
-  listEl.innerHTML = "<div style='font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;'>Why these surfaced</div>" +
-    sorted.map(([nid, level]) => {
-      const node = RAW_DATA.nodes.find(n => n.id === nid);
-      if (!node) return "";
-      const pct = Math.round(level * 100);
-      return `<div class="activated-item" onclick="window.highlightById('${nid}')">
-        <div class="activated-item-header">
-          <span class="activated-item-type">${node.type}</span>
-          <span style="color:#58a6ff;font-size:10px">${pct}%</span>
-        </div>
-        <span class="activated-item-label">${node.label}</span>
-        <div class="activation-bar-wrap"><div class="activation-bar" style="width:${pct}%"></div></div>
-      </div>`;
-    }).join("");
+  reasoningEl.style.display = "block";
+  listEl.innerHTML = entries.slice(0, 8).map(([nid]) => {
+    const node  = RAW_DATA.nodes.find(n => n.id === nid);
+    if (!node) return "";
+    const score = ranked[nid];
+    const pct   = Math.round(score * 100);
+    return `<div class="activated-item" onclick="window.highlightById('${nid}')">
+      <div class="activated-item-header">
+        <span class="activated-item-type" style="color:${node.color}">${node.type}</span>
+        <span style="color:#8b949e;font-size:10px">${pct}%</span>
+      </div>
+      <span class="activated-item-label">${node.label}</span>
+      <div class="activation-bar-wrap">
+        <div class="activation-bar" style="width:${pct}%;background:${node.color}"></div>
+      </div>
+    </div>`;
+  }).join("");
 
   document.getElementById("clear-query").style.display = "block";
-
-  applyQueryHighlight(idx);
+  applyQueryHighlight(idx, ranked);
 }
 
-function applyQueryHighlight(idx) {
+function applyQueryHighlight(idx, ranked) {
   const q = DEMO_QUERIES[idx];
-  const activated = q.activated;
+  if (!ranked) {
+    const entries = Object.entries(q.activated).sort((a,b) => b[1] - a[1]);
+    ranked = {};
+    entries.forEach(([nid,_], i) => { ranked[nid] = Math.max(0.2, 1.0 - i * 0.042); });
+  }
 
-  container.selectAll(".node").each(function(d) {
-    const level = activated[d.id] || 0;
+  // Nodes — glow activated, dim everything else hard
+  nodeGroupSel.each(function(d) {
+    const score  = ranked[d.id] || 0;
     const circle = d3.select(this).select("circle");
-    if (level > 0) {
-      circle.attr("fill-opacity", Math.max(0.6, level));
-      if (level > 0.5) {
-        circle.style("filter", `drop-shadow(0 0 ${Math.round(4 + level * 8)}px ${d.color})`);
-      } else {
-        circle.style("filter", null);
-      }
+    const label  = d3.select(this).select(".node-label");
+    if (score > 0) {
+      circle
+        .attr("fill-opacity", d.zone === "archived" ? 0.5 : Math.max(0.7, score))
+        .style("filter", `drop-shadow(0 0 ${Math.round(5 + score * 12)}px ${d.color}cc)`);
+      label.attr("opacity", score > 0.5 ? 1 : 0.6);
     } else {
-      circle.attr("fill-opacity", d.opacity * 0.12).style("filter", null);
+      circle.attr("fill-opacity", d.opacity * 0.06).style("filter", null);
+      label.attr("opacity", 0);
     }
   });
 
+  // Edges — dim everything except paths between activated nodes
   if (linkSel) {
     linkSel.attr("stroke-opacity", l => {
       const s = l.source.id ?? l.source;
       const t = l.target.id ?? l.target;
-      return (activated[s] > 0 && activated[t] > 0) ? 0.85 : 0.06;
+      return (ranked[s] > 0 && ranked[t] > 0)
+        ? Math.max(l.base_opacity, 0.7)
+        : 0.03;
     });
   }
 }
@@ -1012,16 +890,17 @@ function clearQuery() {
   document.querySelectorAll(".query-chip").forEach(c => c.classList.remove("active"));
   document.getElementById("query-input").value = "";
   document.getElementById("route-badge").style.display = "none";
-  document.getElementById("activation-list").style.display = "none";
+  document.getElementById("reasoning-section").style.display = "none";
   document.getElementById("clear-query").style.display = "none";
 
-  container.selectAll(".node circle")
-    .attr("fill-opacity", d => d.opacity)
-    .style("filter", null);
-  if (linkSel) linkSel.attr("stroke-opacity", 0.55);
+  nodeGroupSel.each(function(d) {
+    d3.select(this).select("circle").attr("fill-opacity", d.opacity).style("filter", null);
+    d3.select(this).select(".node-label").attr("opacity", topLabelIds.has(d.id) ? 0.7 : 0);
+  });
+  if (linkSel) linkSel.attr("stroke-opacity", d => d.base_opacity);
 }
 
-// ---- Node selection ----
+// ── Node selection / focus mode ──
 function selectNode(d, nodeGroup, linksCopy, nodeMap) {
   selectedNode = d.id;
   nodeGroup.classed("selected", n => n.id === d.id);
@@ -1034,59 +913,103 @@ function selectNode(d, nodeGroup, linksCopy, nodeMap) {
     return false;
   });
 
-  nodeGroup.selectAll("circle").attr("fill-opacity", n =>
-    connectedIds.has(n.id) ? n.opacity : n.opacity * 0.2
-  );
-  if (linkSel) linkSel.attr("stroke-opacity", l => {
-    const s = l.source.id ?? l.source;
-    const t = l.target.id ?? l.target;
-    return (s === d.id || t === d.id) ? 0.9 : 0.08;
+  // Aggressive focus: everything outside 1-hop goes very dim
+  nodeGroup.each(function(n) {
+    const circle = d3.select(this).select("circle");
+    const label  = d3.select(this).select(".node-label");
+    if (connectedIds.has(n.id)) {
+      circle.attr("fill-opacity", n.opacity).style("filter", n.id === d.id ? `drop-shadow(0 0 12px ${n.color}aa)` : null);
+      label.attr("opacity", 1);
+    } else {
+      circle.attr("fill-opacity", n.opacity * 0.04).style("filter", null);
+      label.attr("opacity", 0);
+    }
   });
 
-  const panel  = document.getElementById("detail-content");
-  const coreBadge     = d.is_core    ? '<span class="core-badge">★ CORE MEMORY</span>' : "";
-  const archivedBadge = d.zone === "archived" ? '<span class="archived-badge">⚠ ARCHIVED</span>' : "";
-  const tagStr = d.tags.length ? d.tags.join(", ") : "—";
+  if (linkSel) {
+    linkSel.attr("stroke-opacity", l => {
+      const s = l.source.id ?? l.source;
+      const t = l.target.id ?? l.target;
+      return (s === d.id || t === d.id) ? 0.9 : 0.02;
+    });
+  }
 
-  const connections = connectedLinks.map(l => {
-    const otherId = (l.source.id ?? l.source) === d.id ? (l.target.id ?? l.target) : (l.source.id ?? l.source);
-    const other   = nodeMap.get(otherId);
-    const dir     = (l.source.id ?? l.source) === d.id ? "→" : "←";
-    if (!other) return "";
-    const edgeColor = l.color || "#58a6ff";
-    return `<div class="connected-node" onclick="highlightById('${other.id}')">
-      <span class="edge-type" style="color:${edgeColor}">${dir} ${l.type}</span><br>
-      <span class="node-label">${other.label}</span>
-    </div>`;
-  }).join("");
+  // ── Inspector panel ──
+  const inspector = document.getElementById("inspector");
+  inspector.classList.add("open");
+  document.getElementById("nav-sections").classList.add("dimmed");
 
-  panel.innerHTML = `
-    <div style="margin-bottom:8px">${coreBadge}${archivedBadge}</div>
-    <div class="detail-node-content">${d.full}</div>
-    <div class="detail-row"><span class="detail-key">Type</span>        <span class="detail-val">${d.type}</span></div>
-    <div class="detail-row"><span class="detail-key">Zone</span>        <span class="detail-val">${d.zone}</span></div>
-    <div class="detail-row"><span class="detail-key">Salience</span>    <span class="detail-val">${d.salience}</span></div>
-    <div class="detail-row"><span class="detail-key">Activations</span> <span class="detail-val">${d.activation_count}</span></div>
-    <div class="detail-row"><span class="detail-key">Created</span>     <span class="detail-val">${d.created_at}</span></div>
-    <div class="detail-row"><span class="detail-key">Tags</span>        <span class="detail-val">${tagStr}</span></div>
-    ${d.superseded_at ? `<div class="detail-row"><span class="detail-key">Superseded</span><span class="detail-val" style="color:#f85149">${d.superseded_at.slice(0,10)}</span></div>` : ""}
-    ${connections ? `<div style="margin-top:12px;font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Connections (${connectedLinks.length})</div>${connections}` : ""}
-  `;
+  // Type badge
+  const typeBadge = document.getElementById("inspector-type-badge");
+  typeBadge.textContent = d.type;
+  typeBadge.style.color = d.color;
+  typeBadge.style.borderColor = d.color + "66";
+  typeBadge.style.background  = d.color + "18";
+
+  // Status badges alongside type badge
+  const badgesEl = document.getElementById("inspector-badges");
+  badgesEl.innerHTML = `<span id="inspector-type-badge" style="color:${d.color};border-color:${d.color}66;background:${d.color}18" class="" id="inspector-type-badge">${d.type}</span>` +
+    (d.is_core ? ' <span class="core-badge">★ CORE</span>' : '') +
+    (d.zone === "archived" ? ' <span class="archived-badge">ARCHIVED</span>' : '');
+
+  // Full content text
+  document.getElementById("inspector-content-text").textContent = d.full;
+
+  // Metadata grid
+  const metaItems = [
+    ["Zone",        d.zone],
+    ["Salience",    d.salience],
+    ["Degree",      d.degree],
+    ["Activations", d.activation_count],
+    ["Created",     d.created_at],
+    ...(d.superseded_at ? [["Superseded", d.superseded_at.slice(0,10)]] : []),
+    ...(d.tags.length   ? [["Tags",       d.tags.join(", ")]]           : []),
+  ];
+  document.getElementById("inspector-meta").innerHTML = metaItems.map(([k, v]) =>
+    `<div class="meta-item"><span class="meta-key">${k}</span><span class="meta-val">${escapeHtml(String(v))}</span></div>`
+  ).join("");
+
+  // Connections
+  const connSection = document.getElementById("inspector-connections");
+  if (connectedLinks.length) {
+    document.getElementById("inspector-conn-title").textContent = `Connections (${connectedLinks.length})`;
+    document.getElementById("inspector-conn-list").innerHTML = connectedLinks.map(l => {
+      const otherId = (l.source.id ?? l.source) === d.id ? (l.target.id ?? l.target) : (l.source.id ?? l.source);
+      const other   = nodeMap.get(otherId);
+      const dir     = (l.source.id ?? l.source) === d.id ? "→" : "←";
+      if (!other) return "";
+      return `<div class="conn-item" onclick="window.highlightById('${other.id}')">
+        <div class="conn-dot" style="background:${other.color}"></div>
+        <div class="conn-body">
+          <span class="conn-edge-type">${dir} ${l.type}</span>
+          <span class="conn-label">${escapeHtml(other.label)}</span>
+        </div>
+      </div>`;
+    }).join("");
+    connSection.style.display = "block";
+  } else {
+    connSection.style.display = "none";
+  }
 }
 
-function clearSelection(nodeGroup) {
+function clearSelection() {
+  if (selectedNode === null) return;
   selectedNode = null;
-  nodeGroup.classed("selected", false);
+  if (nodeGroupSel) nodeGroupSel.classed("selected", false);
   if (activeQuery !== null) {
     applyQueryHighlight(activeQuery);
   } else {
-    nodeGroup.selectAll("circle").attr("fill-opacity", d => d.opacity);
-    if (linkSel) linkSel.attr("stroke-opacity", 0.55);
+    nodeGroupSel.each(function(d) {
+      d3.select(this).select("circle").attr("fill-opacity", d.opacity).style("filter", null);
+      d3.select(this).select(".node-label").attr("opacity", topLabelIds.has(d.id) ? 0.7 : 0);
+    });
+    if (linkSel) linkSel.attr("stroke-opacity", d => d.base_opacity);
   }
-  document.getElementById("detail-content").innerHTML = '<span style="color:#484f58">Click a node to inspect it.</span>';
+  document.getElementById("inspector").classList.remove("open");
+  document.getElementById("nav-sections").classList.remove("dimmed");
 }
 
-// ---- Zone toggle ----
+// ── Zone toggle ──
 document.querySelectorAll(".zone-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const zone = btn.dataset.zone;
@@ -1096,7 +1019,7 @@ document.querySelectorAll(".zone-btn").forEach(btn => {
   });
 });
 
-// ---- Type legend toggle ----
+// ── Type legend toggle ──
 document.querySelectorAll(".legend-item").forEach(item => {
   item.addEventListener("click", () => {
     const type = item.dataset.type;
@@ -1106,34 +1029,36 @@ document.querySelectorAll(".legend-item").forEach(item => {
   });
 });
 
-// ---- Search ----
+// ── Search ──
 document.getElementById("search-input").addEventListener("input", function() {
   const q = this.value.toLowerCase().trim();
   if (!q) {
-    container.selectAll(".node circle").attr("fill-opacity", d => d.opacity);
+    nodeGroupSel.each(function(d) {
+      d3.select(this).select("circle").attr("fill-opacity", d.opacity);
+      d3.select(this).select(".node-label").attr("opacity", topLabelIds.has(d.id) ? 0.7 : 0);
+    });
     return;
   }
-  container.selectAll(".node").each(function(d) {
+  nodeGroupSel.each(function(d) {
     const match = d.full.toLowerCase().includes(q) || d.tags.some(t => t.toLowerCase().includes(q));
-    d3.select(this).select("circle").attr("fill-opacity", match ? d.opacity : d.opacity * 0.08);
-    d3.select(this).select(".node-label").style("opacity", match ? 1 : 0.1);
+    d3.select(this).select("circle").attr("fill-opacity", match ? d.opacity : d.opacity * 0.05);
+    d3.select(this).select(".node-label").attr("opacity", match ? 1 : 0);
   });
 });
 
-// ---- Init ----
+// ── Init ──
 buildGraph();
 window.addEventListener("resize", buildGraph);
 
 window.highlightById = function(id) {
-  const nodeGroup = container.selectAll(".node");
-  const nodesCopy = nodeGroup.data();
-  const nodeMap   = new Map(nodesCopy.map(d => [d.id, d]));
-  const d         = nodeMap.get(id);
+  const data    = nodeGroupSel.data();
+  const nodeMap = new Map(data.map(d => [d.id, d]));
+  const d       = nodeMap.get(id);
   if (!d) return;
-  const linksCopy = linkSel ? linkSel.data() : [];
-  selectNode(d, nodeGroup, linksCopy, nodeMap);
+  selectNode(d, nodeGroupSel, linkSel ? linkSel.data() : [], nodeMap);
 };
-}
+
+} // end d3 block
 </script>
 </body>
 </html>

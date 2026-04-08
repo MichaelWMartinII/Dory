@@ -17,7 +17,7 @@ print(mem.query("what does the user prefer for inference?"))
 # → MLX (updated preference, supersedes llama.cpp)
 ```
 
-**Current checked-in benchmark result:** 84.0% on LongMemEval (500-question oracle split) for the v0.6 Claude Code MCP run. See [Benchmark results](#benchmark-results) and [Reproducing the benchmark](#reproducing-the-benchmark).
+**Current benchmark result:** 84.2% on LongMemEval (500-question oracle split) — Sonnet extraction + Claude Code MCP agentic answering. See [Benchmark results](#benchmark-results) and [Reproducing the benchmark](#reproducing-the-benchmark).
 
 ---
 
@@ -36,7 +36,7 @@ The deeper problem: naive context injection makes things *worse*. Research ([Chr
 | Episodic | Past events, sessions, experiences | ✓ |
 | Semantic | Facts, preferences, entities, relationships | ✓ |
 | Procedural | Skills, workflows, repeatable processes | ✓ |
-| Working | In-context window (managed by your LLM) | — |
+| Working | Ephemeral session-scoped facts; auto-archived after consolidation | ✓ |
 
 **Spreading activation retrieval** — relevant memories can pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred.
 
@@ -67,7 +67,7 @@ context = mem.query("payment migration deadline")
 print(context)
 
 # End of session: consolidate, decay, promote core memories
-mem.flush()
+mem.consolidate()  # flush() is a kept alias
 
 # See your graph in the browser
 mem.visualize()
@@ -220,7 +220,7 @@ context = await mem.aquery("current topic")
 result  = await mem.abuild_context("current topic")
 await mem.aadd_turn("user", "message")
 node_id = await mem.aobserve("User prefers JWT", node_type="PREFERENCE")
-stats   = await mem.aflush()
+stats   = await mem.aconsolidate()  # aflush() is a kept alias
 ```
 
 ### Export / import
@@ -397,7 +397,7 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
     └─[WORKS_ON]──▶
   ● [ENTITY]     Dory — agent memory library
     └─[CO_OCCURS]──▶
-  ● [EVENT]      [2026-03-30] v0.6 full benchmark — 84.0% LongMemEval
+  ● [EVENT]      [2026-04-07] v0.8 full benchmark — 84.2% LongMemEval
 
   ✗ Flat search: returns both endpoints as separate results. No connecting path.
 ```
@@ -424,21 +424,29 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
 | v0.3 | Sonnet | Sonnet (direct API) | 500 | 79.8% |
 | v0.4 | Haiku | Claude Code (MCP) | 500 | 80.6% |
 | v0.5 | Haiku | Claude Code (MCP) | 500 | 79.6% |
-| **v0.6** | **Haiku** | **Claude Code (MCP)** | **500** | **84.0%** |
+| v0.6 | Haiku | Claude Code (MCP) | 500 | 84.0% |
+| v0.7 | Haiku | Claude Code (MCP) | 500 | 84.2% |
+| **v0.8** | **Sonnet** | **Claude Code (MCP)** | **500** | **84.2%** |
 
-This is the strongest checked-in run so far. The largest category gains versus v0.5 were:
+Category breakdown for the current best run (v0.8, Sonnet extract + MCP answer):
 
-| Category | v0.5 | v0.6 | Δ |
-|---|---|---|---|
-| knowledge-update | 78.2% | 87.2% | +9.0 |
-| single-session-preference | 60.0% | 70.0% | +10.0 |
-| multi-session | 78.9% | 84.2% | +5.3 |
+| Category | Score | Δ vs v0.7 |
+|---|---|---|
+| single-session-user | 94.3% | — |
+| knowledge-update | 87.2% | -5.1pp |
+| multi-session | 83.5% | -2.2pp |
+| temporal-reasoning | 82.7% | **+7.5pp** |
+| single-session-assistant | 80.4% | -12.5pp |
+| single-session-preference | 70.0% | **+13.3pp** |
+| abstention | 73.3% | +6.6pp |
+
+Sonnet extraction brings real gains on temporal and preference but trades ground on knowledge-update and single-session-assistant vs. Haiku. Net score is flat. The agentic MCP answering backend is non-negotiable — switching to static API answering dropped the score to 80.6%.
 
 Artifacts and writeups:
 
-- [`benchmarks/REPORT_v06.md`](benchmarks/REPORT_v06.md)
-- [`benchmarks/predictions_v06_claudecode_mcp_full.jsonl`](benchmarks/predictions_v06_claudecode_mcp_full.jsonl)
-- [`benchmarks/predictions_v06_claudecode_mcp_full.eval.jsonl`](benchmarks/predictions_v06_claudecode_mcp_full.eval.jsonl)
+- [`docs/BENCHMARK_REPORT_v08_sonnet_mcp.md`](docs/BENCHMARK_REPORT_v08_sonnet_mcp.md)
+- [`benchmarks/predictions_v08_sonnet_mcp_full.jsonl`](benchmarks/predictions_v08_sonnet_mcp_full.jsonl)
+- [`benchmarks/predictions_v08_sonnet_mcp_full.eval.jsonl`](benchmarks/predictions_v08_sonnet_mcp_full.eval.jsonl)
 - [`benchmarks/README.md`](benchmarks/README.md)
 
 Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
@@ -504,12 +512,10 @@ Benchmark caveats:
 
 ## Current priorities
 
-The next engineering priorities are:
-
-- precompute counts, durations, and sums during extraction (aggregation layer)
-- improve multi-session counting — model reads a precomputed number, doesn't produce one
-- hard salience floor in Prefixer to reduce context noise
-- implicit supersession detection for value-type conflicts
+- **Unified retrieval path** — replace regex-based query routing with a single spreading activation → top-k → LLM reasoning step. Graph structure becomes self-describing; no code-path branching per query type. Expected to break the 84–85% ceiling.
+- **Relative salience floor** — replace the absolute `SALIENCE_FLOOR = 0.1` with a percentile-based filter (bottom 15% pruned). Graph-size-agnostic, no manual tuning.
+- **SUPERSEDES vs REFINES edges** — distinguish replacement ("now uses X instead of Y") from elaboration ("now uses X with Z added"). Improves knowledge-update accuracy.
+- **`dory explain <node_id>`** — CLI command to surface why a node was archived, what superseded it, and the evidence chain.
 
 ---
 

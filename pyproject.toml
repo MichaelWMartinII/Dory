@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dory-memory"
-version = "0.7.0"
-description = "Agent memory with graph-based spreading activation retrieval and principled forgetting. 84% on LongMemEval (new best)."
+version = "0.8.0"
+description = "Agent memory with graph-based spreading activation retrieval and principled forgetting. 84.2% on LongMemEval."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
