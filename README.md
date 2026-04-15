@@ -82,6 +82,7 @@ dory visualize                    # local-only fallback view, no remote JS
 dory visualize --remote-assets    # full interactive D3 view
 dory show               # print stats + core memories
 dory query "topic"      # spreading activation from the terminal
+dory explain <node_id>  # provenance chain: what superseded it, what it supersedes
 ```
 
 **With auto-extraction** (Dory extracts memories from conversation turns automatically):

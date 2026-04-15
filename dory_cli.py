@@ -144,6 +144,126 @@ def cmd_show(args, graph: Graph) -> None:
             print(f"  [{n.type.value}] {n.content}  (salience={n.salience:.2f})")
 
 
+def cmd_explain(args, graph: Graph) -> None:
+    """
+    Show the full provenance chain for a node — what it replaced, what replaced it,
+    and why it was archived. Accepts a node ID or a content substring for fuzzy lookup.
+    """
+    from dory.schema import EdgeType, ZONE_ACTIVE, ZONE_ARCHIVED
+
+    query = args.node_id
+
+    # Try exact ID first, then substring match on content
+    node = graph.get_node(query)
+    if node is None:
+        q = query.lower()
+        candidates = [n for n in graph.all_nodes(zone=None) if q in n.content.lower()]
+        if not candidates:
+            print(f"No node found matching: {query!r}")
+            return
+        if len(candidates) > 1:
+            print(f"Multiple matches — please be more specific or use a node ID:\n")
+            for c in candidates[:10]:
+                print(f"  [{c.id}] [{c.type.value}] [{c.zone}] {c.content[:80]}")
+            return
+        node = candidates[0]
+
+    # Header
+    zone_label = f" [{node.zone.upper()}]" if node.zone != ZONE_ACTIVE else ""
+    print(f"\n[{node.type.value}]{zone_label}  id={node.id}")
+    print(f"  {node.content}")
+    print()
+
+    # Core stats
+    print(f"  salience:         {node.salience:.4f}")
+    print(f"  activation_count: {node.activation_count}")
+    print(f"  distinct_sessions:{node.distinct_sessions}")
+    print(f"  created_at:       {node.created_at[:10] if node.created_at else 'unknown'}")
+    if node.last_activated:
+        print(f"  last_activated:   {node.last_activated[:10]}")
+    if node.is_core:
+        print(f"  is_core:          yes")
+
+    # Metadata fields of interest
+    meta = node.metadata or {}
+    if meta.get("signal_strength"):
+        print(f"  signal_strength:  {meta['signal_strength']}")
+    if meta.get("occurrence_count", 0) > 1:
+        print(f"  occurrence_count: {meta['occurrence_count']}")
+    if meta.get("start_date"):
+        print(f"  start_date:       {meta['start_date']}")
+    if meta.get("amount"):
+        print(f"  amount:           {meta['amount']}")
+
+    # Archival reason
+    if node.zone == ZONE_ARCHIVED and node.superseded_at:
+        print(f"\n  Archived: {node.superseded_at[:10]}")
+
+    # Build edge map for this node
+    outgoing = []  # edges where this node is source
+    incoming = []  # edges where this node is target
+    for edge in graph.all_edges():
+        if edge.source_id == node.id:
+            outgoing.append(edge)
+        elif edge.target_id == node.id:
+            incoming.append(edge)
+
+    # What this node superseded (outgoing SUPERSEDES)
+    superseded_targets = [e for e in outgoing if e.type == EdgeType.SUPERSEDES]
+    if superseded_targets:
+        print(f"\n  Replaced (SUPERSEDES):")
+        for e in superseded_targets:
+            old = graph.get_node(e.target_id)
+            if old:
+                print(f"    [{old.id}] [{old.zone}] {old.content[:100]}")
+
+    # What superseded this node (incoming SUPERSEDES)
+    superseded_by = [e for e in incoming if e.type == EdgeType.SUPERSEDES]
+    if superseded_by:
+        print(f"\n  Superseded by:")
+        for e in superseded_by:
+            new = graph.get_node(e.source_id)
+            if new:
+                print(f"    [{new.id}] [{new.zone}] {new.content[:100]}")
+
+    # REFINES edges
+    refines_out = [e for e in outgoing if e.type == EdgeType.REFINES]
+    refines_in  = [e for e in incoming if e.type == EdgeType.REFINES]
+    if refines_out:
+        print(f"\n  Refines (adds specificity to):")
+        for e in refines_out:
+            base = graph.get_node(e.target_id)
+            if base:
+                print(f"    [{base.id}] {base.content[:100]}")
+    if refines_in:
+        print(f"\n  Refined by (more specific versions):")
+        for e in refines_in:
+            specific = graph.get_node(e.source_id)
+            if specific:
+                print(f"    [{specific.id}] {specific.content[:100]}")
+
+    # Current authoritative value (follow supersession chain forward)
+    current = node
+    chain_depth = 0
+    while True:
+        next_edges = [e for e in graph.all_edges()
+                      if e.target_id == current.id and e.type == EdgeType.SUPERSEDES]
+        if not next_edges:
+            break
+        current = graph.get_node(next_edges[0].source_id)
+        if not current:
+            break
+        chain_depth += 1
+        if chain_depth > 10:
+            break
+
+    if current.id != node.id:
+        print(f"\n  Current authoritative value:")
+        print(f"    [{current.id}] [{current.zone}] {current.content}")
+
+    print()
+
+
 def cmd_visualize(args, graph: Graph) -> None:
     from dory.visualize import open_visualization
     from dory.schema import ZONE_ARCHIVED, ZONE_EXPIRED
@@ -368,6 +488,10 @@ def main() -> None:
     p_show = sub.add_parser("show", help="Show graph stats and core memories")
     p_show.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
+    # explain
+    p_explain = sub.add_parser("explain", help="Show provenance chain for a node — what it replaced and what replaced it")
+    p_explain.add_argument("node_id", help="Node ID or content substring to look up")
+
     # visualize
     p_viz = sub.add_parser("visualize", help="Open an interactive graph visualization in the browser")
     p_viz.add_argument("--output", type=lambda p: Path(p), default=None, help="Save HTML to this path instead of a temp file")
@@ -432,6 +556,7 @@ def main() -> None:
         "link": cmd_link,
         "list": cmd_list,
         "show": cmd_show,
+        "explain": cmd_explain,
         "visualize": cmd_visualize,
         "consolidate": cmd_consolidate,
         "review-session": cmd_review_session,

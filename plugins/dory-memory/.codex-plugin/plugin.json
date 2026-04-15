@@ -1,0 +1,32 @@
+{
+  "name": "dory-memory",
+  "version": "0.1.0",
+  "description": "Use a shared Dory memory graph from Codex sessions.",
+  "author": {
+    "name": "Michael Martin",
+    "email": "Michael.WMartin91@gmail.com",
+    "url": "https://github.com/MichaelWMartinII"
+  },
+  "homepage": "https://github.com/MichaelWMartinII/Dory",
+  "repository": "https://github.com/MichaelWMartinII/Dory",
+  "license": "Apache-2.0",
+  "keywords": ["memory", "agent", "codex", "mcp", "sqlite"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Dory Memory",
+    "shortDescription": "Shared persistent memory for Codex and Claude Code.",
+    "longDescription": "Connect Codex to the same Dory memory graph used by Claude Code. Query shared memory at session start, store durable observations during work, and consolidate at session end.",
+    "developerName": "Michael Martin",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/MichaelWMartinII/Dory",
+    "privacyPolicyURL": "https://github.com/MichaelWMartinII/Dory/blob/main/SECURITY.md",
+    "termsOfServiceURL": "https://github.com/MichaelWMartinII/Dory/blob/main/LICENSE",
+    "defaultPrompt": [
+      "Load the current Dory project memory.",
+      "Store this decision in Dory memory.",
+      "Consolidate shared Dory memory."
+    ],
+    "brandColor": "#2E6F40"
+  }
+}

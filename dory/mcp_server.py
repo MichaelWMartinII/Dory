@@ -127,8 +127,8 @@ def dory_visualize(include_archived: bool = False) -> str:
     Generate a knowledge graph visualization and open it in a browser.
 
     Creates a self-contained HTML file showing all memory nodes, their types,
-    salience scores, edges, and relationships. By default this is a local-only
-    fallback view; remote D3.js is not loaded from the MCP surface.
+    salience scores, edges, and relationships. Loads D3.js from d3js.org for
+    the interactive force-directed graph.
 
     Args:
         include_archived: If True, also show archived (decayed) nodes in addition
@@ -137,7 +137,7 @@ def dory_visualize(include_archived: bool = False) -> str:
     from .schema import ZONE_ARCHIVED
     zones = ["active", ZONE_ARCHIVED] if include_archived else ["active"]
     graph = _graph()
-    output_path = open_visualization(graph, zones=zones, open_browser=True)
+    output_path = open_visualization(graph, zones=zones, open_browser=True, allow_remote_js=True)
     node_count = len([n for n in graph.all_nodes(zone=None) if n.zone in zones])
     return f"Opened visualization with {node_count} nodes → {output_path}"
 

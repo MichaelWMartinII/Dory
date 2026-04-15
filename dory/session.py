@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
 
 from .graph import Graph
-from .schema import NodeType, EdgeType, new_id, ZONE_ARCHIVED
+from .schema import NodeType, EdgeType, new_id
 from . import activation as act
 from . import consolidation
 from . import store
 from .sanitize import sanitize_node_content
-
-_EPISODIC_EDGE_TYPES = frozenset({"SUPPORTS_FACT", "MENTIONS"})
 
 _STOPWORDS = frozenset({
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "have", "has",
@@ -20,117 +17,6 @@ _STOPWORDS = frozenset({
     "more", "than", "just", "very", "all", "any", "one", "two", "get",
     "use", "uses", "used", "using", "new", "add", "adds", "added",
 })
-
-# Temporal questions ask about order, duration, or relative time between events.
-_TEMPORAL_RE = re.compile(
-    r"\b(before|after|earlier|earliest|later|latest|prior to|"
-    r"how long|how many (?:days?|weeks?|months?|years?)|"
-    r"which (?:one )?(?:came|was|happened) (?:first|last|before|after|earlier|later)|"
-    r"in what order|chronolog|timeline|when did|more recent|duration|"
-    # Relative time: "2 weeks ago", "a month ago", "3 days ago", "two months ago"
-    r"(?:\d+|a|an|two|three|four|five|six|several|few|couple\s+of)\s+"
-    r"(?:days?|weeks?|months?|years?)\s+ago|"
-    # "last Saturday/week/month/two months", "this week/month", "yesterday"
-    r"last\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year|night|"
-    r"(?:few|several|two|three|four|five|six|\d+)\s+(?:days?|weeks?|months?|years?))|"
-    r"yesterday|today|tonight|"
-    r"this\s+(?:week|month|year|morning|evening|afternoon)|"
-    r"past\s+(?:few|several|couple\s+of|two|three|four|five|six|\d+)?\s*(?:days?|weeks?|months?|years?)|"
-    r"previous\s+(?:week|month|year)|"
-    # "which/who X first/last", "what is the order of"
-    r"which\b.+\b(?:first|last)\b|"
-    r"who\b.+\b(?:first|last)\b|"
-    r"the order of|order of the|most recently|"
-    # Holiday/calendar anchors
-    r"valentine|thanksgiving|christmas|new year)\b",
-    re.IGNORECASE,
-)
-
-# Aggregation questions ask for counts or exhaustive lists.
-_AGGREGATION_RE = re.compile(
-    r"\b(how many(?!\s+(?:days?|weeks?|months?|years?))|"
-    r"how (?:often|frequently)|list (?:all|every|each)|"
-    r"all (?:the )?times?|every time|each time|"
-    r"total (?:number|count|times?)|number of times|"
-    r"times (?:did|have|has)|occasions?|instances?)\b",
-    re.IGNORECASE,
-)
-
-# Hybrid questions ask about change or evolution across time — need both layers.
-_HYBRID_RE = re.compile(
-    r"\b(how has\b|"
-    r"has .{1,40} changed|"
-    r"changed over|"
-    r"over time|"
-    r"evolution of|"
-    r"progress on|"
-    r"then (?:vs?\.?|versus) now|"
-    r"compare.{0,20} sessions?|"
-    r"across sessions?|"
-    r"throughout .{0,20} (?:sessions?|time|weeks?|months?))\b",
-    re.IGNORECASE,
-)
-
-
-# Procedural questions asking how to do something — surface PROCEDURE nodes first.
-_PROCEDURE_RE = re.compile(
-    r"\b("
-    r"how (?:do|to|can|should|did) (?:I|we|you)\b|"
-    r"what(?:'s| is) the (?:process|steps?|procedure|workflow|way) (?:to|for)\b|"
-    r"walk (?:me )?through\b|"
-    r"step[- ]by[- ]step\b|"
-    r"what are the steps\b|"
-    r"instructions? (?:for|to)\b|"
-    r"how (?:does|do) .{0,30} work\b"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
-# Preference questions asking for personalized recommendations or suggestions.
-# Needs to match generic phrasing ("any advice", "can you suggest") used in benchmarks.
-_PREFERENCE_RE = re.compile(
-    r"\b("
-    r"would I (?:like|enjoy|prefer)|"
-    r"suggest(?:ions?)? for (?:my|me)|"
-    r"based on (?:my|what I)|"
-    r"recommend(?:ation)?s? for (?:my|me)|"
-    r"what should I get|"
-    r"what kind of .{0,20} (?:do|would) I|"
-    r"any (?:\w+ )?(?:suggestions?|recommendations?|advice|tips?|ideas?)\b|"
-    r"(?:can you |could you )(?:suggest|recommend)\b|"
-    r"what should I\b|"
-    r"what would you (?:recommend|suggest)|"
-    r"(?:what do|do) you think\b|"
-    # Third-person preference questions (LongMemEval asks about "the user" or by name)
-    r"what .{0,40}(?:would|might|could) (?:they|he|she|\w+) (?:like|enjoy|prefer)\b|"
-    r"which .{0,30}(?:would|might) .{0,20}(?:prefer|enjoy|like|choose|pick)\b|"
-    r"(?:most likely|probably) (?:to )?(?:like|enjoy|prefer|want|choose)\b|"
-    r"what .{0,20}(?:does|do) .{0,20}(?:like|enjoy|prefer|tend to)\b|"
-    r"(?:suit(?:s|ed)?|good match for|fit(?:s|ting)? .{0,10}taste)"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
-def _route_query(topic: str) -> Literal["graph", "episodic", "hybrid", "procedure"]:
-    """
-    Classify a query into one of four retrieval modes. Deterministic — no LLM call.
-
-    procedure: how-to questions — surface PROCEDURE nodes first
-    hybrid:    questions about change or evolution across time (need both layers)
-    episodic:  counts, ordering, specific events, relative time (need session log)
-    graph:     preferences, stable facts, beliefs, relationships (default)
-    """
-    if _PROCEDURE_RE.search(topic):
-        return "procedure"
-    if _HYBRID_RE.search(topic):
-        return "hybrid"
-    if _PREFERENCE_RE.search(topic):
-        return "hybrid"
-    if _AGGREGATION_RE.search(topic) or _TEMPORAL_RE.search(topic):
-        return "episodic"
-    return "graph"
 
 
 def _key_terms(content: str, n: int = 12) -> str:
@@ -154,405 +40,243 @@ def _parse_session_date(content: str) -> str:
     return m.group(1) if m else "9999-99-99"  # unknown dates sort last
 
 
-def _get_linked_summaries(
+
+
+
+
+def _serialize_structured(
     activated: dict[str, float],
     graph: Graph,
-    limit: int = 3,
-) -> list:
+    max_nodes: int = 50,
+    reference_date: str = "",
+) -> str:
     """
-    Walk SUPPORTS_FACT and MENTIONS edges from activated nodes to find
-    SESSION_SUMMARY nodes. Returns up to `limit` summaries, sorted
-    most-recent-first, scored by (activation_level × edge_weight).
+    Unified context serializer for the v2.0 retrieval path.
+
+    Groups nodes by structural role so the LLM can reason about the graph directly
+    without the retrieval layer needing to preprocess based on query type:
+
+      - Current Values    — nodes that supersede something; authoritative facts
+      - Knowledge Updates — explicit supersession chains (old → new)
+      - Preferences       — PREFERENCE nodes (all, salience-ranked)
+      - Procedures        — PROCEDURE nodes
+      - Working           — WORKING nodes (ephemeral, in-session facts)
+      - Events            — EVENT nodes, chronological
+      - Sessions          — SESSION nodes, chronological
+      - Session Summaries — SESSION_SUMMARY nodes with embedded counts
+      - Context           — ENTITY, CONCEPT, BELIEF; spreading-activation ranked
+
+    Supersession annotations ([SUPERSEDED], [CURRENT VALUE]), duration hints,
+    occurrence counts, and salient_counts are all rendered inline so the answerer
+    can identify current vs. historical values and answer counting questions from
+    the structured data, not prose reconstruction.
     """
-    scores: dict[str, float] = {}
-    for node_id, level in activated.items():
-        for edge in graph.edges_for_node(node_id):
-            if edge.type.value not in _EPISODIC_EDGE_TYPES:
-                continue
-            other_id = edge.target_id if edge.source_id == node_id else edge.source_id
-            other = graph.get_node(other_id)
-            if other and other.type == NodeType.SESSION_SUMMARY:
-                scores[other_id] = max(scores.get(other_id, 0.0), level * edge.weight)
+    if not activated:
+        return "(no relevant memories found)"
 
-    top = sorted(scores.items(), key=lambda x: -x[1])[:limit]
-    nodes = [graph.get_node(sid) for sid, _ in top if graph.get_node(sid)]
-    nodes.sort(key=lambda n: _parse_session_date(n.content), reverse=True)
-    return nodes
+    # Pre-compute supersession markers
+    superseding_ids: set[str] = set()   # nodes that supersede something (current values)
+    superseded_ids: set[str] = set()    # nodes that have been superseded (historical)
+    supersession_pairs: list[tuple] = []  # (current_node, old_node) for inline rendering
+    refinement_pairs: list[tuple] = []   # (specific_node, base_node) for REFINES rendering
+    for edge in graph.all_edges():
+        if edge.type == EdgeType.SUPERSEDES:
+            superseding_ids.add(edge.source_id)
+            superseded_ids.add(edge.target_id)
+            src = graph.get_node(edge.source_id)
+            tgt = graph.get_node(edge.target_id)
+            if src and tgt:
+                supersession_pairs.append((src, tgt, edge))
+        elif edge.type == EdgeType.REFINES:
+            src = graph.get_node(edge.source_id)
+            tgt = graph.get_node(edge.target_id)
+            if src and tgt:
+                refinement_pairs.append((src, tgt))
 
+    floor = act.SALIENCE_FLOOR
 
-def _aggregate_counts(summaries: list) -> dict:
-    """
-    Sum salient_counts across all SESSION_SUMMARY nodes.
-    Returns a dict of {key: total} for any key appearing in at least one summary.
-    """
-    totals: dict = {}
-    for node in summaries:
-        for k, v in (node.metadata.get("salient_counts") or {}).items():
-            if isinstance(v, (int, float)):
-                totals[k] = totals.get(k, 0) + v
-    return totals
+    def _node_line(node, level: float = 0.0, prefix: str = "") -> str:
+        core_marker = " [CORE]" if node.is_core else ""
+        current_marker = " [CURRENT VALUE]" if node.id in superseding_ids else ""
+        historical_marker = " [SUPERSEDED]" if node.id in superseded_ids else ""
 
+        date_hint = ""
+        if node.type.value == "EVENT" and node.created_at:
+            d = act._fmt_date(node.created_at)
+            if d:
+                date_hint = f" ({d})"
 
-def _format_summary_block(summaries: list, include_totals: bool = False) -> str:
-    """
-    Render SESSION_SUMMARY nodes as a concise episodic block for context injection.
-    Includes date, narrative, and salient_counts so the model can answer counting
-    questions directly from structured data rather than re-deriving from prose.
+        duration_hint = ""
+        if reference_date and node.metadata:
+            start_date = node.metadata.get("start_date", "")
+            if start_date:
+                dur = act._compute_duration_hint(start_date, reference_date)
+                if dur:
+                    duration_hint = f" ({dur})"
 
-    If include_totals=True, prepend an aggregated totals line across all sessions.
-    """
-    if not summaries:
-        return ""
+        occurrence_hint = ""
+        if node.metadata:
+            count = node.metadata.get("occurrence_count", 0)
+            amount = node.metadata.get("amount", "")
+            if count > 1 and amount:
+                occurrence_hint = f" (×{count}, {amount})"
+            elif count > 1:
+                occurrence_hint = f" (×{count})"
+            elif amount:
+                occurrence_hint = f" [{amount}]"
 
-    lines = []
+        type_label = f"[{node.type.value}{core_marker}{current_marker}{historical_marker}]"
+        return f"{prefix}- {type_label}{date_hint}{duration_hint}{occurrence_hint} {node.content}"
 
-    # Aggregate totals across sessions when requested (for counting questions)
-    if include_totals:
-        totals = _aggregate_counts(summaries)
-        if totals:
-            totals_str = ", ".join(f"{k}: {v}" for k, v in sorted(totals.items()))
-            lines.append(f"AGGREGATED TOTALS (sum across ALL sessions): {totals_str}")
-            lines.append("↑ Use these totals directly for 'how many' questions. "
-                         "Do NOT recount from session text unless a total seems wrong.")
-            lines.append("")
+    # Bucket nodes into sections
+    current_vals: list = []
+    preferences: list = []
+    procedures: list = []
+    working: list = []
+    events: list = []
+    sessions: list = []
+    summaries: list = []
+    context_nodes: list = []
 
-    lines.append("Episodic summaries (most recent first):")
-    for node in summaries:
-        date = node.metadata.get("session_date") or _parse_session_date(node.content)
-        # Strip the "[date] Summary: " prefix — we'll re-render it cleanly
-        text = re.sub(r"^\[\d{4}-\d{2}-\d{2}\]\s+Summary:\s*", "", node.content).strip()
-        lines.append(f"\n[{date}]")
-        lines.append(f"  {text}")
-        counts = node.metadata.get("salient_counts") or {}
-        if counts:
-            low_conf = set(node.metadata.get("low_confidence_counts") or [])
-            parts = []
-            for k, v in counts.items():
-                if k in low_conf:
-                    parts.append(f"{k}: {v} ⚠ low confidence — verify against session text")
-                else:
-                    parts.append(f"{k}: {v}")
-            lines.append(f"  Counts: {', '.join(parts)}")
-    return "\n".join(lines)
+    seen_ids: set[str] = set()
 
-
-def _temporal_context(graph: Graph, activated: dict[str, float], summaries: list | None = None, reference_date: str = "") -> str:
-    """
-    For temporal questions: episodic summaries (if any) then SESSION nodes in
-    chronological order, then spread-activated semantic nodes for subject context.
-    """
-    lines = []
-
-    summary_block = _format_summary_block(summaries or [])
-    if summary_block:
-        lines.append(summary_block)
-        lines.append("")
-
-    session_nodes = sorted(
-        [n for n in graph.all_nodes() if n.type.value == "SESSION"],
-        key=lambda n: _parse_session_date(n.content),
-    )
-
-    lines.append("SESSION memories (chronological):")
-    for node in session_nodes:
-        lines.append(f"- {node.content}")
-
-    non_session = {
-        nid: lvl for nid, lvl in activated.items()
-        if graph.get_node(nid) and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
-    }
-
-    if non_session:
-        lines.append("\nAdditional context:")
-        # Sort EVENT nodes by event_date metadata for chronological ordering;
-        # non-EVENT nodes follow sorted by activation level.
-        def _temporal_sort_key(item: tuple[str, float]) -> tuple[int, str, float]:
-            nid, lvl = item
-            node = graph.get_node(nid)
-            if node and node.type.value == "EVENT":
-                date = node.metadata.get("event_date") or node.metadata.get("start_date") or ""
-                return (0, date, -lvl)
-            return (1, "", -lvl)
-        ordered = dict(sorted(non_session.items(), key=_temporal_sort_key))
-        lines.append(act.serialize(ordered, graph, max_nodes=20, reference_date=reference_date))
-
-    return "\n".join(lines)
-
-
-def _aggregation_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None, reference_date: str = "") -> str:
-    """
-    For counting/listing questions: episodic summaries (structured counts first),
-    then full FTS expansion so every relevant instance is captured.
-
-    Trust hierarchy: salient_counts in summaries are authoritative for counts.
-    SESSION nodes provide full narrative backup.
-    """
-    terms = _key_terms(topic, n=6)
-    if terms:
-        or_query = " OR ".join(terms.split())
-        fts_ids = set(store.search_fts(or_query, graph.path, limit=200))
-    else:
-        fts_ids = set()
-
-    expanded: dict[str, float] = dict(activated)
+    # Always include all SESSION and SESSION_SUMMARY nodes
     for node in graph.all_nodes():
-        if node.id in fts_ids and node.id not in expanded:
-            expanded[node.id] = 0.3
+        if node.zone != "active":
+            continue
+        if node.type.value == "SESSION":
+            sessions.append(node)
+            seen_ids.add(node.id)
+        elif node.type.value == "SESSION_SUMMARY":
+            summaries.append(node)
+            seen_ids.add(node.id)
 
-    session_lines = []
-    non_session: dict[str, float] = {}
-    for node_id, level in expanded.items():
+    # Bucket activated nodes
+    ranked = sorted(
+        activated.items(),
+        key=lambda kv: (kv[1], graph.get_node(kv[0]).salience if graph.get_node(kv[0]) else 0),
+        reverse=True,
+    )[:max_nodes]
+
+    for node_id, level in ranked:
         node = graph.get_node(node_id)
-        if node and node.type.value == "SESSION":
-            session_lines.append(f"- {node.content}")
-        elif node and node.type.value != "SESSION_SUMMARY":
-            non_session[node_id] = level
-
-    semantic_block = act.serialize(non_session, graph, max_nodes=80, reference_date=reference_date)
-
-    parts = []
-
-    summary_block = _format_summary_block(summaries or [], include_totals=True)
-    if summary_block:
-        parts.append(summary_block)
-        parts.append(
-            "Note: The AGGREGATED TOTALS above sum counts across ALL sessions — use them "
-            "as the authoritative answer for 'how many total' questions. If a thing appears "
-            "in multiple sessions, SUM those counts; do not use just the most recent session."
-        )
-
-    parts.append(semantic_block)
-
-    if session_lines:
-        session_lines_sorted = sorted(session_lines)
-        parts.append("SESSION memories (complete episode log):\n" + "\n".join(session_lines_sorted))
-
-    return "\n\n".join(p for p in parts if p)
-
-
-def _hybrid_context(topic: str, graph: Graph, activated: dict[str, float], summaries: list | None = None, reference_date: str = "") -> str:
-    """
-    For evolution/change questions: semantic graph block followed by episodic
-    summaries and session log, with explicit trust hierarchy.
-    """
-    semantic = act.serialize(activated, graph, max_nodes=30, reference_date=reference_date)
-    episodic = _aggregation_context(topic, graph, activated, summaries, reference_date=reference_date)
-
-    return (
-        semantic
-        + "\n\n"
-        + episodic
-        + "\n\n"
-        + "Trust hierarchy: for counts, specific events, and dates trust the episodic "
-        + "summaries and SESSION memories. For preferences, beliefs, and stable facts "
-        + "trust the semantic graph."
-    )
-
-
-def _procedure_context(topic: str, graph: Graph, activated: dict[str, float], reference_date: str = "") -> str:
-    """
-    For how-to / procedural questions: surface PROCEDURE nodes first, then
-    spreading activation semantic context, then any relevant session history.
-
-    PROCEDURE nodes are shown regardless of activation level — a stored workflow
-    is relevant to any matching how-to query even if it wasn't recently activated.
-    """
-    # All active PROCEDURE nodes, highest salience first
-    proc_nodes = sorted(
-        [n for n in graph.all_nodes() if n.type == NodeType.PROCEDURE],
-        key=lambda n: -n.salience,
-    )
-
-    # FTS expansion on the topic to find relevant procedures specifically
-    terms = _key_terms(topic, n=8)
-    fts_ids: set[str] = set()
-    if terms:
-        or_query = " OR ".join(terms.split())
-        fts_ids = set(store.search_fts(or_query, graph.path, limit=50))
-
-    # Topically relevant procedures (FTS match) sorted first
-    relevant_procs = [n for n in proc_nodes if n.id in fts_ids]
-    other_procs = [n for n in proc_nodes if n.id not in fts_ids]
-    ordered_procs = relevant_procs + other_procs
-
-    # Semantic context from spreading activation (exclude PROCEDURE nodes already shown)
-    proc_ids = {n.id for n in ordered_procs}
-    expanded: dict[str, float] = {
-        nid: lvl for nid, lvl in activated.items()
-        if nid not in proc_ids
-        and graph.get_node(nid)
-        and graph.get_node(nid).type.value not in ("SESSION", "SESSION_SUMMARY")
-    }
-
-    parts = []
-
-    if ordered_procs:
-        proc_lines = ["Stored procedures and workflows:"]
-        for node in ordered_procs:
-            core_marker = " [CORE]" if node.is_core else ""
-            proc_lines.append(f"- [PROCEDURE{core_marker}] {node.content}")
-        parts.append("\n".join(proc_lines))
-
-    if expanded:
-        parts.append(act.serialize(expanded, graph, max_nodes=20, reference_date=reference_date))
-
-    return "\n\n".join(p for p in parts if p) or "(no relevant memories found)"
-
-
-def _dedup_similar(nodes: list, threshold: float = 0.65) -> list:
-    """
-    Remove near-duplicate nodes by Jaccard word-overlap.
-    The first (highest-ranked) node in each cluster is kept.
-    """
-    kept = []
-    for n in nodes:
-        wa = set(n.content.lower().split())
-        duplicate = any(
-            len(wa & set(k.content.lower().split())) / max(len(wa | set(k.content.lower().split())), 1) >= threshold
-            for k in kept
-        )
-        if not duplicate:
-            kept.append(n)
-    return kept
-
-
-def _preference_context(topic: str, graph: Graph, activated: dict[str, float], reference_date: str = "") -> str:
-    """
-    For preference/recommendation questions: surface explicit PREFERENCE nodes first,
-    then KEY EVENTS (specific memorable episodes), then SESSION_SUMMARY grounding,
-    then FTS-expanded semantic nodes, then SESSION narratives, then synthesized patterns.
-
-    Ordering rationale:
-      - FTS-sort preferences so query-relevant ones appear first, not just highest salience
-      - Deduplicate near-identical preferences to reduce noise and surfacing diverse facts
-      - Elevate EVENT nodes to their own section — episodic specifics are often the key fact
-      - Cap ENTITY nodes at 5 to prevent restaurant/product lists drowning key events
-    """
-    # FTS expansion on the topic — needed for both preference ranking and entity capping
-    terms = _key_terms(topic, n=8)
-    fts_ids: set[str] = set()
-    if terms:
-        or_query = " OR ".join(terms.split())
-        fts_ids = set(store.search_fts(or_query, graph.path, limit=100))
-
-    # Split into explicitly extracted preferences vs synthesized behavioral patterns
-    real_prefs = []
-    synth_prefs = []
-    for n in graph.all_nodes():
-        if n.type == NodeType.PREFERENCE and n.zone != ZONE_ARCHIVED:
-            if "synthesized" in (n.tags or []):
-                synth_prefs.append(n)
-            else:
-                real_prefs.append(n)
-
-    # FTS-first sort: preferences matching the query bubble to the top
-    real_prefs.sort(key=lambda n: (n.id not in fts_ids, -n.salience))
-    # Deduplicate near-identical preferences — reduces 7 yogurt clones to 2-3 distinct ones
-    real_prefs = _dedup_similar(real_prefs, threshold=0.65)
-
-    # Only surface synthesized patterns if they overlap with the query topic
-    topic_words = {w.lower() for w in topic.split() if len(w) >= 4}
-    relevant_synth = [
-        n for n in synth_prefs
-        if any(kw in n.content.lower() for kw in topic_words)
-    ][:5]
-
-    # Separate EVENT nodes from other activated nodes — events are high signal for preference Qs
-    # (e.g. "user met Brandon Flowers after a concert" is the key fact for a Denver trip question)
-    event_nodes: list[tuple] = []
-    event_ids: set[str] = set()
-    expanded: dict[str, float] = {}
-    entity_count = 0
-    proc_count = 0
-
-    for nid, lvl in activated.items():
-        node = graph.get_node(nid)
-        if not node or node.zone == ZONE_ARCHIVED:
+        if not node or node.zone != "active" or node_id in seen_ids:
             continue
-        if node.type.value in ("SESSION", "SESSION_SUMMARY") or node.type == NodeType.PREFERENCE:
+        if node.activation_count > 0 and node.salience < floor:
             continue
-        if node.type == NodeType.EVENT:
-            event_nodes.append((node, lvl))
-            event_ids.add(nid)
-        elif node.type == NodeType.ENTITY:
-            # Cap ENTITY nodes at 5 — long restaurant/product lists drown key events
-            if entity_count < 5 or nid in fts_ids:
-                expanded[nid] = lvl
-                entity_count += 1
+        seen_ids.add(node_id)
+
+        if node.type == NodeType.PREFERENCE:
+            preferences.append((node, level))
         elif node.type == NodeType.PROCEDURE:
-            # Cap PROCEDURE nodes at 3 — full recipes bias the answer model away from preferences
-            if proc_count < 3:
-                expanded[nid] = lvl
-                proc_count += 1
+            procedures.append((node, level))
+        elif node.type.value == "WORKING":
+            working.append((node, level))
+        elif node.type.value == "EVENT":
+            events.append((node, level))
+        elif node.id in superseding_ids:
+            current_vals.append((node, level))
         else:
-            expanded[nid] = lvl
+            context_nodes.append((node, level))
 
-    # Also pull FTS-matched EVENT nodes not yet in activated
-    for nid in fts_ids:
-        node = graph.get_node(nid)
-        if not node or node.zone == ZONE_ARCHIVED:
-            continue
-        if node.type == NodeType.EVENT and nid not in event_ids:
-            event_nodes.append((node, 0.3))
-            event_ids.add(nid)
-        elif node.type not in (NodeType.PREFERENCE, NodeType.EVENT) and \
-                node.type.value not in ("SESSION", "SESSION_SUMMARY") and \
-                nid not in expanded:
-            if node.type == NodeType.PROCEDURE and proc_count >= 3:
-                continue  # respect procedure cap for FTS-matched nodes too
-            expanded[nid] = 0.3
+    # Sort sections
+    sessions.sort(key=lambda n: _parse_session_date(n.content))
+    summaries.sort(key=lambda n: _parse_session_date(n.content), reverse=True)
+    events.sort(key=lambda x: (
+        x[0].metadata.get("event_date") or x[0].metadata.get("start_date") or x[0].created_at or ""
+    ))
+    preferences.sort(key=lambda x: -x[1])
+    current_vals.sort(key=lambda x: -x[1])
+    context_nodes.sort(key=lambda x: -x[1])
 
-    # Sort events: FTS-matched first (most query-relevant), then by activation level
-    event_nodes.sort(key=lambda x: (x[0].id not in fts_ids, -x[1]))
-    event_nodes = event_nodes[:8]
+    sections = []
 
-    parts = []
+    if current_vals:
+        lines = ["## Current Values"]
+        for node, level in current_vals:
+            lines.append(_node_line(node, level))
+        sections.append("\n".join(lines))
 
-    # 1. Explicit preferences — FTS-ranked, deduplicated, highest signal
-    if real_prefs:
-        pref_lines = ["Stored preferences:"]
-        for node in real_prefs:
-            core_marker = " [CORE]" if node.is_core else ""
-            pref_lines.append(f"- [PREFERENCE{core_marker}] {node.content}")
-        parts.append("\n".join(pref_lines))
+    # Inline supersession chains: only pairs where both sides are relevant
+    relevant_updates = [
+        (cur, old, edge) for cur, old, edge in supersession_pairs
+        if cur.id in seen_ids or old.id in seen_ids
+    ]
+    if relevant_updates:
+        lines = ["## Knowledge Updates"]
+        for cur, old, edge in relevant_updates:
+            date = act._fmt_date(old.superseded_at or edge.created_at)
+            date_str = f" (updated {date})" if date else ""
+            lines.append(f"  [KNOWLEDGE UPDATE{date_str}] Previously: {old.content} → Now: {cur.content}")
+        sections.append("\n".join(lines))
 
-    # 2. Key events — specific memorable episodes, often the decisive detail
-    if event_nodes:
-        event_lines = ["Key events:"]
-        for node, _ in event_nodes:
-            date_prefix = f"({node.created_at[:10]}) " if node.created_at else ""
-            event_lines.append(f"- [EVENT] {date_prefix}{node.content}")
-        parts.append("\n".join(event_lines))
+    # REFINES chains
+    relevant_refinements = [
+        (specific, base) for specific, base in refinement_pairs
+        if specific.id in seen_ids or base.id in seen_ids
+    ]
+    if relevant_refinements:
+        lines = ["## Elaborations"]
+        for specific, base in relevant_refinements:
+            lines.append(f"  [ELABORATION] {base.content} → more specifically: {specific.content}")
+        sections.append("\n".join(lines))
 
-    # 3. SESSION_SUMMARY nodes — episodic grounding for experience-based questions
-    summaries = _get_linked_summaries(activated, graph, limit=3)
-    summary_block = _format_summary_block(summaries)
-    if summary_block:
-        parts.append(summary_block)
+    if preferences:
+        lines = ["## Preferences"]
+        for node, level in preferences:
+            lines.append(_node_line(node, level))
+        sections.append("\n".join(lines))
 
-    # 4. FTS-expanded semantic context (entity-capped, events already shown above)
-    if expanded:
-        parts.append(act.serialize(expanded, graph, max_nodes=20, reference_date=reference_date))
+    if working:
+        lines = ["## In Progress (current session)"]
+        for node, level in working:
+            lines.append(_node_line(node, level))
+        sections.append("\n".join(lines))
 
-    # 5. Full session narratives
-    session_nodes = sorted(
-        [n for n in graph.all_nodes() if n.type.value == "SESSION"],
-        key=lambda n: _parse_session_date(n.content),
-    )
-    if session_nodes:
-        sess_lines = ["Session history (context on user experiences):"]
-        for node in session_nodes:
-            sess_lines.append(f"- {node.content}")
-        parts.append("\n".join(sess_lines))
+    if procedures:
+        lines = ["## Procedures"]
+        for node, level in procedures:
+            lines.append(_node_line(node, level))
+        sections.append("\n".join(lines))
 
-    # 6. Synthesized behavioral patterns — only if topically relevant, lowest priority
-    if relevant_synth:
-        synth_lines = ["Behavioral patterns (inferred from repeated engagement):"]
-        for node in relevant_synth:
-            synth_lines.append(f"- {node.content}")
-        parts.append("\n".join(synth_lines))
+    if events:
+        lines = ["## Events (chronological)"]
+        for node, level in events:
+            lines.append(_node_line(node, level))
+        sections.append("\n".join(lines))
 
-    return "\n\n".join(p for p in parts if p) or "(no relevant memories found)"
+    if summaries:
+        lines = ["## Session Summaries (most recent first)"]
+        for node in summaries:
+            date = node.metadata.get("session_date") or _parse_session_date(node.content)
+            text = re.sub(r"^\[\d{4}-\d{2}-\d{2}\]\s+Summary:\s*", "", node.content).strip()
+            lines.append(f"\n[{date}]")
+            lines.append(f"  {text}")
+            counts = node.metadata.get("salient_counts") or {}
+            if counts:
+                low_conf = set(node.metadata.get("low_confidence_counts") or [])
+                parts = []
+                for k, v in counts.items():
+                    if k in low_conf:
+                        parts.append(f"{k}: {v} ⚠")
+                    else:
+                        parts.append(f"{k}: {v}")
+                lines.append(f"  Counts: {', '.join(parts)}")
+        sections.append("\n".join(lines))
+
+    if sessions:
+        lines = ["## Sessions (chronological)"]
+        for node in sessions:
+            lines.append(f"- {node.content}")
+        sections.append("\n".join(lines))
+
+    if context_nodes:
+        lines = ["## Context"]
+        for node, level in context_nodes:
+            lines.append(_node_line(node, level))
+        sections.append("\n".join(lines))
+
+    return "\n\n".join(sections) if sections else "(no relevant memories found)"
 
 
 def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5, weight: float = 0.5) -> int:
@@ -582,14 +306,13 @@ def _auto_link(new_node_id: str, content: str, graph: Graph, max_links: int = 5,
 def query(topic: str, graph: Graph, reference_date: str = "") -> str:
     """
     Query the graph for context relevant to a topic.
-    Returns a context block suitable for injecting into a prompt.
+    Returns a structured context block suitable for injecting into a prompt.
 
-    Three retrieval modes, selected automatically:
-    - temporal:     chronological SESSION timeline for date/order questions
-    - aggregation:  full-graph FTS scan for counting/listing questions
-    - default:      spreading activation (all other questions)
-
-    All modes ensure SESSION nodes are present for episodic recall.
+    Unified retrieval path (v2.0): spreading activation → top-k nodes →
+    structured serialization. No routing or query-type branching. The graph
+    structure itself (node types, SUPERSEDES edges, chronological ordering,
+    salient_counts in SESSION_SUMMARY) makes the context self-describing so
+    the answerer can reason about it without preprocessing.
 
     reference_date: ISO date string (YYYY-MM-DD) used to compute duration hints
     (e.g. "~9 months, since 2023-03-01") for nodes with a start_date in metadata.
@@ -600,35 +323,7 @@ def query(topic: str, graph: Graph, reference_date: str = "") -> str:
         activated = act.spread(seeds[:8], graph)
     graph._recompute_salience()
 
-    # Ensure all SESSION nodes are present (at minimum activation level)
-    for node in graph.all_nodes():
-        if node.type.value == "SESSION" and node.id not in activated:
-            activated[node.id] = 0.1
-
-    route = _route_query(topic)
-
-    if route == "procedure":
-        return _procedure_context(topic, graph, activated, reference_date=reference_date)
-
-    # For episodic and hybrid routes, pull SESSION_SUMMARY nodes linked to
-    # the activated semantic nodes — staged retrieval.
-    summaries: list = []
-    if route in ("episodic", "hybrid"):
-        summaries = _get_linked_summaries(activated, graph, limit=3)
-
-    if route == "hybrid":
-        if _PREFERENCE_RE.search(topic):
-            return _preference_context(topic, graph, activated, reference_date=reference_date)
-        return _hybrid_context(topic, graph, activated, summaries, reference_date=reference_date)
-
-    if route == "episodic":
-        # Aggregation wins over temporal when both signals are present —
-        # counting questions need exhaustive recall, not just ordering.
-        if _AGGREGATION_RE.search(topic):
-            return _aggregation_context(topic, graph, activated, summaries, reference_date=reference_date)
-        return _temporal_context(graph, activated, summaries, reference_date=reference_date)
-
-    return act.serialize(activated, graph, max_nodes=50, reference_date=reference_date)
+    return _serialize_structured(activated, graph, max_nodes=50, reference_date=reference_date)
 
 
 def observe(

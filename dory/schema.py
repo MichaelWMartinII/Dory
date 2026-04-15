@@ -32,7 +32,8 @@ class EdgeType(str, Enum):
     USES = "USES"
     RELATED_TO = "RELATED_TO"
     # Provenance edges (bi-temporal conflict resolution)
-    SUPERSEDES = "SUPERSEDES"
+    SUPERSEDES = "SUPERSEDES"   # old value is wrong/replaced; old node archived
+    REFINES = "REFINES"         # old value is still true; new value adds specificity
     # Implicit co-occurrence edges
     CO_OCCURS = "CO_OCCURS"
     # Episodic edges (SessionSummary layer)

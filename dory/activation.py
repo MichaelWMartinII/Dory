@@ -280,6 +280,10 @@ def serialize(
                         edge_lines.append(
                             f"  [KNOWLEDGE UPDATE{date_str}] Previously: {src.content} → Now: {tgt.content}"
                         )
+                    elif edge.type == EdgeType.REFINES:
+                        edge_lines.append(
+                            f"  [ELABORATION] {tgt.content} → more specifically: {src.content}"
+                        )
                     else:
                         edge_lines.append(
                             f"  {src.content} --[{edge.type.value}]--> {tgt.content}"

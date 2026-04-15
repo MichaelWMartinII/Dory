@@ -29,6 +29,7 @@ _NODE_COLORS = {
 # Base opacity for edges by type — drives visual hierarchy
 _EDGE_BASE_OPACITY = {
     "SUPERSEDES":        0.75,
+    "REFINES":           0.65,
     "TEMPORALLY_AFTER":  0.55,
     "TEMPORALLY_BEFORE": 0.55,
     "SUPPORTS_FACT":     0.40,
@@ -43,6 +44,7 @@ _EDGE_COLORS = {
     "TEMPORALLY_AFTER":  "#d29922",
     "TEMPORALLY_BEFORE": "#d29922",
     "SUPERSEDES":        "#f85149",
+    "REFINES":           "#a78bfa",
     "SUPPORTS_FACT":     "#22d3ee",
     "MENTIONS":          "#22d3ee",
     "PREFERS":           "#fb923c",

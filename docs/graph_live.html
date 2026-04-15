@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dory Memory Graph</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #sidebar {
+    width: 300px;
+    min-width: 300px;
+    background: #161b22;
+    border-right: 1px solid #30363d;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  #sidebar-header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f0f6fc;
+    letter-spacing: 0.5px;
+  }
+
+  #sidebar-header p {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 4px;
+  }
+
+  #stats {
+    padding: 12px 16px;
+    border-bottom: 1px solid #30363d;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat { text-align: center; }
+  .stat-val { font-size: 20px; font-weight: 700; color: #58a6ff; }
+  .stat-lbl { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ----- Query panel ----- */
+  #query-panel {
+    padding: 12px 16px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  #query-panel h3 {
+    font-size: 11px;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  #query-input {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    width: 100%;
+    outline: none;
+    margin-bottom: 6px;
+  }
+  #query-input:focus { border-color: #58a6ff; }
+  #query-input::placeholder { color: #484f58; }
+
+  #query-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .query-chip {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1.4;
+  }
+  .query-chip:hover { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
+  .query-chip.active { border-color: #58a6ff; color: #58a6ff; background: #0d1f3c; }
+
+  #route-badge {
+    display: none;
+    margin-bottom: 6px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .badge-graph    { background: #0d1f3c; color: #58a6ff; border: 1px solid #58a6ff; }
+  .badge-episodic { background: #0f2b0f; color: #56d364; border: 1px solid #56d364; }
+  .badge-hybrid   { background: #2d1a00; color: #f0883e; border: 1px solid #f0883e; }
+
+  #activation-list {
+    display: none;
+  }
+
+  .activated-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: #21262d;
+    border-radius: 4px;
+    padding: 5px 8px;
+    margin-bottom: 3px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .activated-item:hover { background: #30363d; }
+  .activated-item-header { display: flex; justify-content: space-between; align-items: center; }
+  .activated-item-type { color: #58a6ff; font-size: 10px; }
+  .activated-item-label { color: #c9d1d9; line-height: 1.3; }
+  .activation-bar-wrap { background: #0d1117; border-radius: 2px; height: 3px; margin-top: 2px; }
+  .activation-bar { height: 3px; background: #58a6ff; border-radius: 2px; transition: width 0.3s; }
+
+  #clear-query {
+    display: none;
+    background: none;
+    border: none;
+    color: #8b949e;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 0;
+    text-decoration: underline;
+  }
+  #clear-query:hover { color: #c9d1d9; }
+
+  /* ----- Legend ----- */
+  #legend {
+    padding: 12px 16px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  #legend h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .legend-item:hover { background: #21262d; }
+  .legend-item.dimmed { opacity: 0.4; }
+
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ----- Edge legend ----- */
+  #edge-legend {
+    padding: 10px 16px;
+    border-bottom: 1px solid #30363d;
+  }
+  #edge-legend h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .edge-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .edge-swatch {
+    width: 24px;
+    height: 2px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .edge-swatch.dashed {
+    background: repeating-linear-gradient(90deg, #f85149 0px, #f85149 5px, transparent 5px, transparent 9px);
+    height: 2px;
+  }
+
+  /* ----- Zone controls ----- */
+  #zone-controls {
+    padding: 10px 16px;
+    border-bottom: 1px solid #30363d;
+  }
+  #zone-controls h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .zone-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-right: 4px;
+    transition: all 0.15s;
+  }
+  .zone-btn.active { background: #0d419d; border-color: #58a6ff; color: #58a6ff; }
+
+  /* ----- Detail panel ----- */
+  #detail-panel {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  #detail-panel h3 {
+    font-size: 11px;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  #detail-content {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #8b949e;
+  }
+
+  .detail-node-content {
+    color: #c9d1d9;
+    font-size: 13px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  .detail-key { color: #8b949e; }
+  .detail-val { color: #58a6ff; font-family: monospace; }
+
+  .core-badge {
+    display: inline-block;
+    background: #2d2000;
+    border: 1px solid #bb8009;
+    color: #d29922;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+
+  .archived-badge {
+    display: inline-block;
+    background: #2d1010;
+    border: 1px solid #f85149;
+    color: #f85149;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    margin-left: 4px;
+  }
+
+  .connected-node {
+    background: #21262d;
+    border-radius: 4px;
+    padding: 5px 8px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .connected-node:hover { background: #30363d; }
+  .connected-node .edge-type { font-size: 10px; }
+  .connected-node .node-label { color: #c9d1d9; }
+
+  /* ----- Graph area ----- */
+  #graph-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #offline-notice {
+    display: none;
+    margin: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #30363d;
+    background: #161b22;
+    color: #c9d1d9;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  #offline-notice strong { color: #f0f6fc; }
+  #offline-notice code { color: #58a6ff; }
+
+  #fallback-view {
+    display: none;
+    padding: 16px;
+    overflow-y: auto;
+    height: calc(100vh - 52px);
+  }
+
+  .fallback-section {
+    margin-bottom: 18px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .fallback-section h3 {
+    font-size: 12px;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 10px;
+  }
+
+  .fallback-row {
+    padding: 8px 0;
+    border-top: 1px solid #21262d;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .fallback-row:first-child { border-top: none; padding-top: 0; }
+  .fallback-type { color: #58a6ff; font-size: 11px; }
+  .fallback-meta { color: #8b949e; font-size: 11px; }
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .link {
+    stroke-opacity: 0.55;
+  }
+
+  .node circle {
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+
+  .node circle:hover { filter: brightness(1.3); }
+  .node.selected circle { filter: brightness(1.4); }
+
+  .node-label {
+    font-size: 10px;
+    fill: #8b949e;
+    pointer-events: none;
+    text-anchor: middle;
+  }
+
+  .core-ring {
+    fill: none;
+    stroke: #d29922;
+    stroke-width: 2px;
+    pointer-events: none;
+  }
+
+  .edge-label {
+    font-size: 9px;
+    fill: #484f58;
+    pointer-events: none;
+    text-anchor: middle;
+  }
+
+  #tooltip {
+    position: absolute;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    max-width: 240px;
+    z-index: 100;
+  }
+
+  #tooltip .tt-type { color: #58a6ff; font-size: 10px; text-transform: uppercase; }
+  #tooltip .tt-content { color: #f0f6fc; margin-top: 2px; line-height: 1.4; }
+
+  #search-bar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+  }
+
+  #search-input {
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    width: 200px;
+    outline: none;
+  }
+  #search-input:focus { border-color: #58a6ff; }
+  #search-input::placeholder { color: #484f58; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>Dory Memory</h1>
+    <p>Knowledge graph visualization</p>
+  </div>
+
+  <div id="stats">
+    <div class="stat"><div class="stat-val" id="s-nodes">0</div><div class="stat-lbl">Nodes</div></div>
+    <div class="stat"><div class="stat-val" id="s-edges">0</div><div class="stat-lbl">Edges</div></div>
+    <div class="stat"><div class="stat-val" id="s-core">0</div><div class="stat-lbl">Core</div></div>
+    <div class="stat"><div class="stat-val" id="s-archived">0</div><div class="stat-lbl">Archived</div></div>
+  </div>
+
+  <!-- Query mode -->
+  <div id="query-panel">
+    <h3>Query Memory</h3>
+    <input id="query-input" type="text" placeholder="Ask a question…">
+    <div id="query-examples"></div>
+    <div id="route-badge"></div>
+    <button id="clear-query" onclick="clearQuery()">✕ clear query</button>
+    <div id="activation-list"></div>
+  </div>
+
+  <div id="legend">
+    <h3>Node Types</h3>
+    <div class="legend-item" data-type="ENTITY">          <div class="legend-dot" style="background:#4fc3f7"></div> Entity</div>
+    <div class="legend-item" data-type="CONCEPT">         <div class="legend-dot" style="background:#b39ddb"></div> Concept</div>
+    <div class="legend-item" data-type="EVENT">           <div class="legend-dot" style="background:#81c784"></div> Event</div>
+    <div class="legend-item" data-type="PREFERENCE">      <div class="legend-dot" style="background:#ffb74d"></div> Preference</div>
+    <div class="legend-item" data-type="BELIEF">          <div class="legend-dot" style="background:#ef9a9a"></div> Belief</div>
+    <div class="legend-item" data-type="SESSION">         <div class="legend-dot" style="background:#90a4ae"></div> Session</div>
+    <div class="legend-item" data-type="SESSION_SUMMARY"> <div class="legend-dot" style="background:#4dd0e1"></div> Session Summary</div>
+    <div class="legend-item" data-type="PROCEDURE">       <div class="legend-dot" style="background:#ce93d8"></div> Procedure</div>
+  </div>
+
+  <div id="edge-legend">
+    <h3>Edge Types</h3>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#58a6ff"></div> WORKS_ON / USES</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#ffb74d"></div> PREFERS</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#4dd0e1"></div> SUPPORTS_FACT / MENTIONS</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#d29922"></div> TEMPORALLY_AFTER</div>
+    <div class="edge-legend-item"><div class="edge-swatch" style="background:#4a7fa5"></div> CO_OCCURS</div>
+    <div class="edge-legend-item"><div class="edge-swatch dashed"></div> SUPERSEDES (archived)</div>
+  </div>
+
+  <div id="zone-controls">
+    <h3>Zones</h3>
+    <button class="zone-btn active" data-zone="active">Active</button>
+    <button class="zone-btn active" data-zone="archived">Archived</button>
+    <button class="zone-btn" data-zone="expired">Expired</button>
+  </div>
+
+  <div id="detail-panel">
+    <h3>Node Detail</h3>
+    <div id="detail-content">
+      <span style="color:#484f58">Click a node to inspect it.</span>
+    </div>
+  </div>
+</div>
+
+<div id="graph-area">
+  <div id="search-bar">
+    <input id="search-input" type="text" placeholder="Search nodes…">
+  </div>
+  <div id="offline-notice"></div>
+  <div id="fallback-view"></div>
+  <div id="tooltip">
+    <div class="tt-type" id="tt-type"></div>
+    <div class="tt-content" id="tt-content"></div>
+  </div>
+  <svg id="graph-svg"></svg>
+</div>
+
+<script>
+const RAW_DATA    = {"nodes": [{"id": "37bedf89", "label": "Agent", "full": "Agent", "type": "ENTITY", "salience": 0.663, "is_core": true, "zone": "active", "tags": ["project", "ai", "local-llm", "python"], "activation_count": 36, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "739a38bc", "label": "Clanker", "full": "Clanker", "type": "ENTITY", "salience": 0.622, "is_core": true, "zone": "active", "tags": ["project", "ai", "local-llm", "python", "rag"], "activation_count": 26, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "46ce2616", "label": "AllergyFind", "full": "AllergyFind", "type": "ENTITY", "salience": 0.626, "is_core": true, "zone": "active", "tags": ["project", "saas", "fastapi", "python", "business"], "activation_count": 27, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "90453a5a", "label": "FerroBot", "full": "FerroBot", "type": "ENTITY", "salience": 0.609, "is_core": true, "zone": "active", "tags": ["project", "simulation", "physics", "python"], "activation_count": 23, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "5c2a679b", "label": "Engram", "full": "Engram", "type": "ENTITY", "salience": 0.647, "is_core": true, "zone": "active", "tags": ["project", "memory", "graph", "python"], "activation_count": 31, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "df570556", "label": "portfolio", "full": "portfolio", "type": "ENTITY", "salience": 0.64, "is_core": true, "zone": "active", "tags": ["project", "nextjs", "typescript", "react"], "activation_count": 29, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "ef910f52", "label": "WeatherMap", "full": "WeatherMap", "type": "ENTITY", "salience": 0.604, "is_core": true, "zone": "active", "tags": ["project", "pwa", "javascript", "leaflet"], "activation_count": 22, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "aeebed08", "label": "FastAPI", "full": "FastAPI", "type": "CONCEPT", "salience": 0.56, "is_core": true, "zone": "active", "tags": ["framework", "python", "web"], "activation_count": 25, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "f58715ce", "label": "PostgreSQL", "full": "PostgreSQL", "type": "CONCEPT", "salience": 0.509, "is_core": true, "zone": "active", "tags": ["database", "sql"], "activation_count": 18, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "4c34ece1", "label": "Supabase", "full": "Supabase", "type": "CONCEPT", "salience": 0.509, "is_core": true, "zone": "active", "tags": ["database", "postgres", "hosted"], "activation_count": 18, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "c1964259", "label": "Next.js", "full": "Next.js", "type": "CONCEPT", "salience": 0.632, "is_core": true, "zone": "active", "tags": ["framework", "react", "typescript"], "activation_count": 27, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "dd04e091", "label": "llama.cpp", "full": "llama.cpp", "type": "CONCEPT", "salience": 0.524, "is_core": true, "zone": "active", "tags": ["local-llm", "inference", "c++"], "activation_count": 21, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "4c2ba47f", "label": "ChromaDB", "full": "ChromaDB", "type": "CONCEPT", "salience": 0.483, "is_core": true, "zone": "active", "tags": ["vector-db", "rag", "embeddings"], "activation_count": 14, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "dd9519f4", "label": "SQLite", "full": "SQLite", "type": "CONCEPT", "salience": 0.558, "is_core": true, "zone": "active", "tags": ["database", "local"], "activation_count": 28, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "f15013bf", "label": "MLX", "full": "MLX", "type": "CONCEPT", "salience": 0.483, "is_core": true, "zone": "active", "tags": ["apple-silicon", "inference", "framework"], "activation_count": 14, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "afadc8cd", "label": "Anthropic API", "full": "Anthropic API", "type": "CONCEPT", "salience": 0.651, "is_core": true, "zone": "active", "tags": ["api", "claude", "cloud"], "activation_count": 32, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "7def9062", "label": "local-first AI", "full": "local-first AI", "type": "CONCEPT", "salience": 0.626, "is_core": true, "zone": "active", "tags": ["architecture", "privacy", "no-cloud"], "activation_count": 26, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "07c6d058", "label": "Qwen models", "full": "Qwen models", "type": "CONCEPT", "salience": 0.669, "is_core": true, "zone": "active", "tags": ["llm", "alibaba", "open-source"], "activation_count": 32, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "9dcfeeb3", "label": "spreading activation", "full": "spreading activation", "type": "CONCEPT", "salience": 0.533, "is_core": true, "zone": "active", "tags": ["memory", "graph", "retrieval", "collins-loftus"], "activation_count": 22, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "6ce5c48b", "label": "Prefers local-first, no cloud AI where possible", "full": "Prefers local-first, no cloud AI where possible", "type": "PREFERENCE", "salience": 0.609, "is_core": true, "zone": "active", "tags": ["architecture"], "activation_count": 23, "created_at": "2026-03-02", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "4bcbed96", "label": "Prefers Apache 2.0 licensed models", "full": "Prefers Apache 2.0 licensed models", "type": "PREFERENCE", "salience": 0.654, "is_core": true, "zone": "active", "tags": ["licensing"], "activation_count": 25, "created_at": "2026-03-02", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "7fcc9d10", "label": "Values privacy \u2014 data stays on device", "full": "Values privacy \u2014 data stays on device", "type": "PREFERENCE", "salience": 0.609, "is_core": true, "zone": "active", "tags": ["privacy"], "activation_count": 23, "created_at": "2026-03-02", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "6994dc84", "label": "Flat file memory has no topology, no emergence \u2014 Engram s\u2026", "full": "Flat file memory has no topology, no emergence \u2014 Engram solves this", "type": "BELIEF", "salience": 0.643, "is_core": true, "zone": "active", "tags": ["memory", "architecture"], "activation_count": 30, "created_at": "2026-03-02", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "44cadfe1", "label": "Open/closed LLM gap is now ~2% \u2014 open models viable for m\u2026", "full": "Open/closed LLM gap is now ~2% \u2014 open models viable for most tasks", "type": "BELIEF", "salience": 0.657, "is_core": true, "zone": "active", "tags": ["llm", "open-source"], "activation_count": 34, "created_at": "2026-03-02", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "4f16eb37", "label": "Chinese labs (Qwen, DeepSeek, MiniMax, Kimi) now dominate\u2026", "full": "Chinese labs (Qwen, DeepSeek, MiniMax, Kimi) now dominate open-source frontier", "type": "BELIEF", "salience": 0.651, "is_core": true, "zone": "active", "tags": ["llm", "open-source"], "activation_count": 32, "created_at": "2026-03-02", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "b28b69e9", "label": "Meta may go closed-source with Avocado \u2014 Llama 4 may be l\u2026", "full": "Meta may go closed-source with Avocado \u2014 Llama 4 may be last open Llama", "type": "BELIEF", "salience": 0.607, "is_core": true, "zone": "active", "tags": ["llm", "meta", "open-source"], "activation_count": 26, "created_at": "2026-03-02", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "ff7f7c99", "label": "MoE architecture: total params \u2260 inference cost, only act\u2026", "full": "MoE architecture: total params \u2260 inference cost, only active params matter", "type": "BELIEF", "salience": 0.616, "is_core": false, "zone": "active", "tags": ["llm", "architecture", "moe"], "activation_count": 23, "created_at": "2026-03-02", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "01895b3f", "label": "Giovanni Ristorante Nashville", "full": "Giovanni Ristorante Nashville", "type": "ENTITY", "salience": 0.503, "is_core": true, "zone": "active", "tags": ["customer", "allergyfind", "restaurant"], "activation_count": 17, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "164b5e31", "label": "Murfreesboro, TN", "full": "Murfreesboro, TN", "type": "ENTITY", "salience": 0.604, "is_core": true, "zone": "active", "tags": ["location"], "activation_count": 22, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "1e2fe00f", "label": "Elwin Ransom", "full": "Elwin Ransom", "type": "ENTITY", "salience": 0.509, "is_core": true, "zone": "active", "tags": ["agent", "ai-companion", "name"], "activation_count": 18, "created_at": "2026-03-02", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "6461c347", "label": "DeepSeek V4 expected March 2026 \u2014 worth waiting for as fi\u2026", "full": "DeepSeek V4 expected March 2026 \u2014 worth waiting for as fine-tune base", "type": "EVENT", "salience": 0.508, "is_core": false, "zone": "active", "tags": ["llm", "deepseek", "upcoming"], "activation_count": 18, "created_at": "2026-03-02", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "23087944", "label": "Fine-tune coding model on Lambda Labs, run quantized locally", "full": "Fine-tune coding model on Lambda Labs, run quantized locally", "type": "CONCEPT", "salience": 0.67, "is_core": true, "zone": "active", "tags": ["plan", "lambda-labs", "fine-tuning"], "activation_count": 27, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "e1c52d06", "label": "Qwen3-Coder-Next (80B/3B active) best local coding agent \u2026", "full": "Qwen3-Coder-Next (80B/3B active) best local coding agent on 64GB Apple Silicon", "type": "CONCEPT", "salience": 0.598, "is_core": true, "zone": "active", "tags": ["local-llm", "coding", "recommendation"], "activation_count": 21, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "35778da9", "label": "QwQ-32B best local reasoning model \u2014 rivals DeepSeek R1 a\u2026", "full": "QwQ-32B best local reasoning model \u2014 rivals DeepSeek R1 at 1/20th size", "type": "CONCEPT", "salience": 0.711, "is_core": true, "zone": "active", "tags": ["local-llm", "reasoning", "recommendation"], "activation_count": 28, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "e8a0e121", "label": "Michael believes software tools like Claude are better at\u2026", "full": "Michael believes software tools like Claude are better at coding than humans \u2014 wants to shift focus to hardware", "type": "BELIEF", "salience": 0.598, "is_core": false, "zone": "active", "tags": ["career", "hardware", "software"], "activation_count": 19, "created_at": "2026-03-02", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "2add4167", "label": "FerroBot hardware build \u2014 Michael has the physical compon\u2026", "full": "FerroBot hardware build \u2014 Michael has the physical components (coils, drivers) and plans to build it soon", "type": "CONCEPT", "salience": 0.605, "is_core": false, "zone": "active", "tags": ["ferrobot", "hardware", "upcoming", "electronics"], "activation_count": 17, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "27a83e79", "label": "Michael prefers hands-on hardware work over pure software", "full": "Michael prefers hands-on hardware work over pure software", "type": "PREFERENCE", "salience": 0.654, "is_core": true, "zone": "active", "tags": ["hardware", "preference", "career"], "activation_count": 25, "created_at": "2026-03-02", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "5e629514", "label": "Project: mobile interface to Claude Code and Elwin Ransom\u2026", "full": "Project: mobile interface to Claude Code and Elwin Ransom from phone while laptop is closed", "type": "CONCEPT", "salience": 0.56, "is_core": true, "zone": "active", "tags": ["project", "mobile", "upcoming", "claude-code", "agent"], "activation_count": 14, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "662dfa53", "label": "Tailscale + Termius as likely approach for mobile Claude \u2026", "full": "Tailscale + Termius as likely approach for mobile Claude Code SSH access", "type": "CONCEPT", "salience": 0.491, "is_core": true, "zone": "active", "tags": ["mobile", "ssh", "tailscale", "termius"], "activation_count": 15, "created_at": "2026-03-02", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "b6db5e3d", "label": "Agent memory infrastructure is an underserved frontier in\u2026", "full": "Agent memory infrastructure is an underserved frontier in 2026. Most agents are amnesiac. ReMe (Alibaba) trending on GitHub. Mastra Observational Memory cuts token costs 4-10x vs RAG. Need: structured, queryable, persistent, low-token-cost retrieval. Michael's Engram is a working prototype of this concept and ahead of the curve.", "type": "CONCEPT", "salience": 0.767, "is_core": true, "zone": "active", "tags": [], "activation_count": 33, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "b5a05fee", "label": "2026 builder landscape: AI is infrastructure not a featur\u2026", "full": "2026 builder landscape: AI is infrastructure not a feature. MCP is de facto standard (97M SDK downloads/month). Multi-agent production deployments accelerating (1445% Gartner surge). Local/sovereign AI accelerating. Vibe coding mainstream. Micro-SaaS hyper-specialization winning. Open source models (DeepSeek V3.2, Qwen3-Coder-Next) closing gap with frontier closed models.", "type": "CONCEPT", "salience": 0.728, "is_core": true, "zone": "active", "tags": [], "activation_count": 33, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "1cd87119", "label": "Michael is interested in building agent memory infrastruc\u2026", "full": "Michael is interested in building agent memory infrastructure as a product. Engram (current project) is a session-based graph memory system and natural foundation. Key insight: Engram is ahead of the market curve on agent memory - should be explored as a productizable direction.", "type": "BELIEF", "salience": 0.658, "is_core": true, "zone": "active", "tags": [], "activation_count": 34, "created_at": "2026-03-04", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "db2bcfc1", "label": "Deep research March 2026: Agent memory landscape. Taxonom\u2026", "full": "Deep research March 2026: Agent memory landscape. Taxonomy: working/in-context, episodic, semantic, procedural. MemGPT/Letta: OS-inspired virtual context. Mastra Observational Memory: 94.87% LongMemEval, 4-10x token reduction via prompt caching. Zep: temporal knowledge graph (Graphiti). Mem0: vector+graph extraction, 20s write latency problem. Context rot real: degrades at 500-750 tokens, all 18 frontier models affected. Multi-agent: 36.9% failures from misalignment, 15x token overhead. Local stack: SQLite-vec+sqlite-lembed, LanceDB embedded. Letta filesystem 74% on LoCoMo beats Mem0 graph at 68.5%. MAGMA: multi-graph 45.5% reasoning gain 95% token reduction. Unsolved: memory interoperability, forgetting policy, write conflicts, extraction quality, privacy.", "type": "CONCEPT", "salience": 0.962, "is_core": true, "zone": "active", "tags": [], "activation_count": 36, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "82b123f2", "label": "Agent memory taxonomy: Working (in-context), Episodic (pa\u2026", "full": "Agent memory taxonomy: Working (in-context), Episodic (past events/sessions), Semantic (general facts/preferences), Procedural (skills/how-to). LLMs have strong semantic memory in weights but zero episodic memory at inference time and fixed procedural memory. Episodic memory is the most underbuilt capability.", "type": "CONCEPT", "salience": 0.711, "is_core": true, "zone": "active", "tags": [], "activation_count": 33, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "2a2daba9", "label": "Key agent memory papers: MemGPT/Letta (OS-inspired two-ti\u2026", "full": "Key agent memory papers: MemGPT/Letta (OS-inspired two-tier memory, arXiv 2310.08560), Zep/Graphiti (bi-temporal knowledge graph, arXiv 2501.13956), MAGMA (four orthogonal graphs: semantic/temporal/causal/entity - 45.5% better reasoning, 95% token reduction, arXiv 2601.03236), MemOS (memory as OS resource, MemCube abstraction, 159% temporal reasoning improvement, arXiv 2505.22101), Mastra Observational Memory (cacheable prefix approach, 4-10x token cost reduction, 94.87% LongMemEval with GPT-5-mini).", "type": "CONCEPT", "salience": 0.871, "is_core": true, "zone": "active", "tags": [], "activation_count": 31, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "d153e7e5", "label": "Agent memory production gaps (completely unsolved): 1) Pr\u2026", "full": "Agent memory production gaps (completely unsolved): 1) Principled forgetting/decay - agents accumulate stale conflicting memories indefinitely. 2) Multi-agent write conflict resolution - last-writer-wins is universal, CRDTs/event sourcing only in research. 3) Memory format portability/interoperability - no standard protocol. 4) Local-first integrated stack - fragmented tools. 5) Procedural memory (skill accumulation) - embryonic. 6) False memory from bad LLM extraction - no defense. 7) Privacy/adversarial memory injection - no production defense.", "type": "CONCEPT", "salience": 0.741, "is_core": true, "zone": "active", "tags": [], "activation_count": 31, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "733d1af3", "label": "Commercial agent memory landscape: mem0 (30k stars, cloud\u2026", "full": "Commercial agent memory landscape: mem0 (30k stars, cloud+OSS, no temporal reasoning, 20s write latency self-hosted), Zep/Graphiti (bi-temporal graph, Neo4j backend, enterprise-focused), Letta (full stateful runtime, MemGPT lineage, requires full adoption), Mastra (TypeScript-only, best benchmarks), ReMe/Alibaba (local-first, Apache 2.0, trending March 2026), MemOS (research->product, most theoretically complete). Gap: no Python-native Mastra-equivalent, no local-first integrated stack with principled forgetting.", "type": "CONCEPT", "salience": 0.84, "is_core": true, "zone": "active", "tags": [], "activation_count": 27, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "8b184392", "label": "Context rot: Chroma Research found ALL 18 frontier models\u2026", "full": "Context rot: Chroma Research found ALL 18 frontier models (Claude Opus 4, GPT-4.1, Gemini 2.5, Qwen3-235B) degrade with context length. Degradation starts at 500-750 tokens, substantial beyond 2500. Lost-in-middle effect. Implication: injecting large memory blocks can actively HURT agent performance vs no memory. Token cost at 100K context: /bin/zsh.25/call at GPT-4o prices = /day at 10k calls. Mastra's cacheable prefix approach is the best current solution to both problems.", "type": "CONCEPT", "salience": 0.749, "is_core": true, "zone": "active", "tags": [], "activation_count": 28, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "3f73f6f2", "label": "Adding REST endpoint for menu data to AllergyFind", "full": "Adding REST endpoint for menu data to AllergyFind", "type": "EVENT", "salience": 0.52, "is_core": true, "zone": "active", "tags": ["AllergyFind", "API"], "activation_count": 20, "created_at": "2026-03-04", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "561fac77", "label": "Menu allergen data API endpoint", "full": "Menu allergen data API endpoint", "type": "CONCEPT", "salience": 0.634, "is_core": true, "zone": "active", "tags": ["API", "allergen"], "activation_count": 27, "created_at": "2026-03-04", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "f200a778", "label": "Prefers FastAPI for REST endpoints", "full": "Prefers FastAPI for REST endpoints", "type": "PREFERENCE", "salience": 0.616, "is_core": true, "zone": "active", "tags": ["FastAPI"], "activation_count": 19, "created_at": "2026-03-04", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "6ec18a52", "label": "AllergyFind platform", "full": "AllergyFind platform", "type": "ENTITY", "salience": 0.442, "is_core": false, "zone": "active", "tags": ["allergen", "B2B"], "activation_count": 9, "created_at": "2026-03-04", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "5e738a4a", "label": "Uses Qwen3-14B as primary local model for inference", "full": "Uses Qwen3-14B as primary local model for inference", "type": "PREFERENCE", "salience": 0.663, "is_core": true, "zone": "active", "tags": ["model", "local"], "activation_count": 25, "created_at": "2026-03-04", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "3de0159c", "label": "Uses Qwen3-14B-Q4_K_M as primary local model for inferenc\u2026", "full": "Uses Qwen3-14B-Q4_K_M as primary local model for inference tasks", "type": "PREFERENCE", "salience": 0.666, "is_core": true, "zone": "active", "tags": ["model", "local"], "activation_count": 26, "created_at": "2026-03-04", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "a3a78039", "label": "AllergyFind uses FastAPI with PostgreSQL on Supabase", "full": "AllergyFind uses FastAPI with PostgreSQL on Supabase", "type": "CONCEPT", "salience": 0.522, "is_core": true, "zone": "active", "tags": [], "activation_count": 17, "created_at": "2026-03-09", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "44bea39e", "label": "Dory is now a proper Python library usable with any AI model", "full": "Dory is now a proper Python library usable with any AI model", "type": "EVENT", "salience": 0.634, "is_core": true, "zone": "active", "tags": [], "activation_count": 27, "created_at": "2026-03-10", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "30507907", "label": "Cloudflare Browser Rendering /crawl endpoint: open beta (\u2026", "full": "Cloudflare Browser Rendering /crawl endpoint: open beta (2026-03-10). Single API call crawls entire sites asynchronously. POST /accounts/{id}/browser-rendering/crawl. Output: HTML/Markdown/JSON. Workers AI powers JSON extraction via jsonOptions (prompt, response_format, custom_ai). render:false=static Workers fetch (free in beta). render:true=headless browser /bin/zsh.09/hr overage. Free plan: 5 crawls/day 100 pages max. Paid: 100k pages/crawl 600req/min. modifiedSince+maxAge for incremental crawls. Respects robots.txt. No PDF support. Evaluated for AllergyFind restaurant menu scraping.", "type": "CONCEPT", "salience": 0.659, "is_core": true, "zone": "active", "tags": [], "activation_count": 29, "created_at": "2026-03-11", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "fc8b9a86", "label": "As of early 2026, top open-source video generation models\u2026", "full": "As of early 2026, top open-source video generation models: Wan2.2 (Alibaba, MoE, July 2025) \u2014 best T2V/I2V overall. HF: Wan-AI/Wan2.2-T2V-A14B, Wan-AI/Wan2.2-I2V-A14B, Wan-AI/Wan2.2-TI2V-5B. LTX-2 (Lightricks, Jan 2026, Apache 2.0) \u2014 19B, joint audio+video, 4K@50fps, needs 32GB+ VRAM. HF: Lightricks/LTX-2. HunyuanVideo-1.5 (Tencent, Nov 2025) \u2014 8.3B, lightweight. HF: tencent/HunyuanVideo-1.5. A100 40GB: TI2V-5B runs natively, A14B needs offloading. ComfyUI: kijai/ComfyUI-WanVideoWrapper, kijai/ComfyUI-HunyuanVideoWrapper, Lightricks/ComfyUI-LTXVideo. Native ComfyUI Wan2.2 via Comfy-Org/Wan_2.2_ComfyUI_Repackaged.", "type": "CONCEPT", "salience": 0.65, "is_core": true, "zone": "active", "tags": [], "activation_count": 22, "created_at": "2026-03-12", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "b079c537", "label": "As of March 2026, comprehensive open-source video gen lan\u2026", "full": "As of March 2026, comprehensive open-source video gen landscape: (1) Wan 2.2 (Alibaba, Jul 2025, Apache 2.0) MoE DiT, VBench 84.7%+, best general T2V. HF: Wan-AI/Wan2.2-T2V-A14B. ComfyUI: kijai/ComfyUI-WanVideoWrapper. (2) LTX-2.3 (Lightricks, Mar 5 2026) 19B, 4K@50fps, joint audio+video, improved VAE. HF: Lightricks/LTX-2.3. ComfyUI: Lightricks/ComfyUI-LTXVideo (day-0). (3) SkyReels V3 (SkyworkAI, Jan 29 2026) multi-ref images, audio-to-video, V2V. HF: Skywork/SkyReels-V3-A2V-19B etc. ComfyUI: kijai/ComfyUI-WanVideoWrapper. (4) MAGI-1 24B (Sand AI, Apr 2025, Apache 2.0) autoregressive diffusion, best physical realism, Physics-IQ 56.02%. HF: sand-ai/MAGI-1. ComfyUI: built in. (5) Open-Sora 2.0 (hpcaitech, Jan 2026) 11B, VBench gap vs Sora 0.69%. HF: hpcai-tech/Open-Sora-v2. (6) HunyuanVideo-1.5 (Tencent, Nov 2025) 8.3B lightweight. NOT open: Wan 2.5 weights not released, Wan 2.6 API-only, SkyReels V4 limited preview. No new models from Stability AI, BFL (SOTA in dev), Google VideoPoet (not open), Meta Mango (H1 2026 target). CogVideoX last meaningful update was 1.5 in late 2024. Quality winner no-VRAM-limit: Wan 2.2 T2V-A14B (general), LTX-2.3 (audio+video), MAGI-1 24B (physics/instruction).", "type": "CONCEPT", "salience": 0.714, "is_core": true, "zone": "active", "tags": [], "activation_count": 20, "created_at": "2026-03-12", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "b3d67a2e", "label": "Michael Martin", "full": "Michael Martin", "type": "ENTITY", "salience": 0.685, "is_core": true, "zone": "active", "tags": ["person", "owner"], "activation_count": 43, "created_at": "2026-03-15", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "095db088", "label": "Socials", "full": "Socials", "type": "ENTITY", "salience": 0.662, "is_core": true, "zone": "active", "tags": ["project", "ai", "claude", "python", "cli"], "activation_count": 36, "created_at": "2026-03-15", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "dca85c1f", "label": "Use MLX over llama.cpp on Apple Silicon (20-30% faster)", "full": "Use MLX over llama.cpp on Apple Silicon (20-30% faster)", "type": "PREFERENCE", "salience": 0.665, "is_core": true, "zone": "active", "tags": ["performance", "apple-silicon"], "activation_count": 34, "created_at": "2026-03-15", "color": "#ffb74d", "opacity": 1.0, "superseded_at": null}, {"id": "24a746d2", "label": "Michael has ~$11 remaining in Anthropic API credits as of\u2026", "full": "Michael has ~$11 remaining in Anthropic API credits as of 2026-03-16. Full 500-question LongMemEval run with Sonnet extraction costs ~$25-40 (not feasible). Spot checks with Sonnet (~50 questions) cost ~$2-3. Full run with Haiku costs ~$5-8.", "type": "PREFERENCE", "salience": 0.687, "is_core": true, "zone": "active", "tags": [], "activation_count": 22, "created_at": "2026-03-17", "color": "#ffb74d", "opacity": 1.0, "superseded_at": "2026-03-27T07:25:58.563817+00:00"}, {"id": "eb67c2b2", "label": "March 2026 agent memory systems deep research: Mastra 22.\u2026", "full": "March 2026 agent memory systems deep research: Mastra 22.1k stars TypeScript (99.3%), dual Apache2/Enterprise license, observational memory with Observer+Reflector agents, 94.87% LongMemEval GPT-5-mini, 5-40x compression, 4-10x token cost reduction via prompt caching, no vector/graph DB needed. Dependencies: 40+ LLM providers, pnpm+Turbo monorepo, Vitest, @mastra/pg/@mastra/libsql/@mastra/mongodb adapters. Threshold: 30k tokens (Observer), 40k tokens (Reflector). Benchmark: single-session 94.87%, multi-session 87.2%.", "type": "CONCEPT", "salience": 0.813, "is_core": true, "zone": "active", "tags": [], "activation_count": 21, "created_at": "2026-03-17", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "1b68dc66", "label": "Zep/Graphiti 23.8k stars, Python (3.10+), Apache 2.0 lice\u2026", "full": "Zep/Graphiti 23.8k stars, Python (3.10+), Apache 2.0 license. Bi-temporal knowledge graph: tracks when facts occurred (t_occurred) and ingested (t_ingested), edges have validity intervals. Core modules: graphiti_core, FastAPI server, MCP server. Graph backends: Neo4j (5.26+), FalkorDB 1.1.2, Kuzu 0.11.2, Amazon Neptune. Hybrid retrieval: semantic embeddings + BM25 full-text + graph traversal (BFS), no LLM calls during retrieval. Latency: P95 300ms. Performance: DMR 94.8% vs MemGPT 93.4%, LongMemEval +18.5%, 90% faster than baseline. Paper arXiv 2501.13956 by Preston Rasmussen et al, CC BY-NC-SA.", "type": "CONCEPT", "salience": 0.747, "is_core": true, "zone": "active", "tags": [], "activation_count": 21, "created_at": "2026-03-17", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "a0911b9a", "label": "Mem0 50.1k stars, Python 63.7% + TypeScript 24.1%, Apache\u2026", "full": "Mem0 50.1k stars, Python 63.7% + TypeScript 24.1%, Apache 2.0 OSS + cloud managed. Three-tier: client, core, storage backends. Memory pipeline: LLM extraction \u2192 similarity search \u2192 conflict resolution \u2192 embedding \u2192 concurrent writes to vector+graph+SQLite. Vector stores: 22+ (Qdrant, Pinecone, ChromaDB, PGVector, Milvus, Weaviate, FAISS, Redis, Elasticsearch). Graph stores: 5+ (Neo4j, Memgraph, Kuzu, Neptune, FalkorDB). Dependencies: openai, pydantic, qdrant-client, sqlalchemy, LangGraph, CrewAI integrations. Performance: +26% LOCOMO benchmark, 91% faster than full-context, 90% lower tokens. Write latency: sub-second median (0.71s), configurable graph enable/disable per request to optimize latency.", "type": "CONCEPT", "salience": 0.729, "is_core": true, "zone": "active", "tags": [], "activation_count": 21, "created_at": "2026-03-17", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "15294244", "label": "Dory repository audit completed 2026-03-17: structure ver\u2026", "full": "Dory repository audit completed 2026-03-17: structure verified, all imports working, 175 tests passing, no critical issues found. Identified one concern: .env file with API key exists in repo but is properly gitignored and not tracked.", "type": "EVENT", "salience": 0.598, "is_core": false, "zone": "active", "tags": [], "activation_count": 19, "created_at": "2026-03-17", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "13ab5047", "label": "Dory LongMemEval benchmark session (2026-03-18): Starting\u2026", "full": "Dory LongMemEval benchmark session (2026-03-18): Starting score 66.8% (334/500). Implemented 5 fixes: (1) question_date injection into answering prompt, (2) expanded _TEMPORAL_RE to catch relative time patterns like \"2 weeks ago\"/\"last Saturday\", (3) aggregation-before-temporal routing priority, (4) session_date threading through Observer/Summarizer for EVENT date resolution, (5) dedicated _ANSWER_PROMPT_PREFERENCE for preference questions. Spot check spot_v4 (40 questions) showed 15 fixes, 4 regressions. Applied SESSION-after-semantic fix in _aggregation_context (session.py line 144) \u2014 SESSION memories now appear AFTER the semantic block to prevent anchoring on incomplete counts. This fix not yet validated. Next step: validate SESSION ordering fix with micro spot check, then decide on full 500-question run. Projected score: ~73-76%.", "type": "EVENT", "salience": 0.594, "is_core": false, "zone": "active", "tags": [], "activation_count": 18, "created_at": "2026-03-18", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "79a894e6", "label": "Dory benchmark critical bug found (2026-03-18): In _aggre\u2026", "full": "Dory benchmark critical bug found (2026-03-18): In _aggregation_context (dory/session.py), putting SESSION memories BEFORE the semantic block causes the model to anchor on incomplete counts. For counting questions like \"how many plants did I acquire\" where SESSION summaries only mention 2 items but there are 3 EVENT nodes, the model says 2 instead of 3. Fix: SESSION memories must come AFTER the semantic block. Fix applied at line 144 of session.py.", "type": "CONCEPT", "salience": 0.63, "is_core": false, "zone": "active", "tags": [], "activation_count": 18, "created_at": "2026-03-18", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "a39d86f8", "label": "Dory benchmark files as of 2026-03-18: benchmarks/spot_v4\u2026", "full": "Dory benchmark files as of 2026-03-18: benchmarks/spot_v4.json (40-question spot check), benchmarks/predictions_spot_v4.jsonl (predictions), benchmarks/predictions_spot_v4.jsonl.eval-results-claude-haiku-4-5-20251001 (eval). benchmarks/spot_micro.json (10-question regression check, built to validate SESSION ordering fix). Full run predictions at benchmarks/predictions_sonnet_full.jsonl, eval at benchmarks/predictions_sonnet_full.jsonl.eval-results-claude-haiku-4-5-20251001. Always pass --api-key explicitly to longmemeval.py (env var ANTHROPIC_API_KEY not auto-read by the script).", "type": "ENTITY", "salience": 0.599, "is_core": false, "zone": "active", "tags": [], "activation_count": 19, "created_at": "2026-03-18", "color": "#4fc3f7", "opacity": 1.0, "superseded_at": null}, {"id": "d7432bb0", "label": "Dory v0.2 benchmark results (2026-03-18): spot_v4 (40q) s\u2026", "full": "Dory v0.2 benchmark results (2026-03-18): spot_v4 (40q) scored 60.0% (24/40) vs v0.1 baseline of 47.5% (19/40). Net +12.5pp. By type: temporal-reasoning +20pp (53%\u219273%), multi-session +15pp (54%\u219269%), preference flat (33%\u219233%). 8 fixed, 3 regressions (all borderline evaluator noise). SessionSummary + salient_counts + retrieval fusion working as designed. Full 500q run pending \u2014 would cost ~$10-16 with extra summarize_session() calls, tight against $11 credit balance.", "type": "EVENT", "salience": 0.588, "is_core": false, "zone": "active", "tags": [], "activation_count": 17, "created_at": "2026-03-18", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "d5e1e2a1", "label": "Dory repository audit completed 2026-03-21: Repository is\u2026", "full": "Dory repository audit completed 2026-03-21: Repository is well-organized and mature. All documented features are present and functional. No critical issues found. .env file exists with API keys but is properly gitignored. Database files (engram.db, demo_*.db) are present and tracked. Benchmarks directory contains extensive evaluation results from v0.1-v0.3 progression. Code quality is high with no TODOs/FIXMEs found in core modules. Pyproject.toml version correctly set to 0.3.3. All imports are consistent. Test suite covers 14 test files. Some __pycache__ and .pyc files present from recent Python 3.13-3.14 runs.", "type": "EVENT", "salience": 0.56, "is_core": false, "zone": "active", "tags": [], "activation_count": 13, "created_at": "2026-03-22", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "41475305", "label": "Dory v0.3.5 preference recall fix implemented (2026-03-22\u2026", "full": "Dory v0.3.5 preference recall fix implemented (2026-03-22): broadened _PREFERENCE_RE in dory/session.py to match generic question phrasing (\"any advice on\", \"can you suggest\", \"any tips\", \"what should I\", \"what would you recommend\"). Added _preference_context() function that surfaces ALL PREFERENCE nodes first (sorted by salience, regardless of activation), then FTS-expanded semantic nodes, then full SESSION history. Routing updated: when _PREFERENCE_RE matches and route==hybrid, calls _preference_context() instead of _hybrid_context(). Version bumped to 0.3.5, CHANGELOG updated. NOT yet pushed to GitHub or PyPI.", "type": "EVENT", "salience": 0.561, "is_core": false, "zone": "active", "tags": [], "activation_count": 13, "created_at": "2026-03-22", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "9d9d42d5", "label": "Dory preference recall validation status (2026-03-22): sp\u2026", "full": "Dory preference recall validation status (2026-03-22): spot_v5 benchmark run completed (40q, 0 errors). Both spot_v5 preference questions now produce correct personalized answers. BUT: old v3 predictions also produced good answers for those 2 questions \u2014 they were likely already passing via spreading activation on SESSION nodes. The 46.7% failure rate (13/30) on full LongMemEval may be due to extraction quality (Observer not storing PREFERENCE nodes) rather than routing alone. Next step: run targeted extraction audit on known-failing LongMemEval preference questions before spending $25 on a full oracle run. No OpenAI key available for official GPT-4o judge.", "type": "EVENT", "salience": 0.56, "is_core": false, "zone": "active", "tags": [], "activation_count": 13, "created_at": "2026-03-22", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "7c105137", "label": "v0.4 dev session 2026-03-22: fixed 3 bugs (Reflector exce\u2026", "full": "v0.4 dev session 2026-03-22: fixed 3 bugs (Reflector exception swallowing, multi-agent query filter, async executor leak), 3 score improvements (_PREFERENCE_RE patterns, synthesized preference filtering, SESSION_SUMMARY in preference context), behavioral synthesis rework (PREFERENCE-only sources, 4/3 thresholds, no auto-is_core), Graph RLock thread safety, Observer._find_similar FTS+fallback, adversarial injection defense (sanitize.py), implicit preference inference (infer_implicit flag), SQLite WAL+connection caching, PROCEDURE node routing. 175/175 tests passing throughout.", "type": "EVENT", "salience": 0.544, "is_core": false, "zone": "active", "tags": [], "activation_count": 11, "created_at": "2026-03-23", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "83d67852", "label": "Dory v0.5.0 shipped 2026-03-28 to GitHub and PyPI (dory-m\u2026", "full": "Dory v0.5.0 shipped 2026-03-28 to GitHub and PyPI (dory-memory 0.5.0). Key changes: (1) Observer async extraction via ThreadPoolExecutor \u2014 LLM calls parallel, graph writes serialized via _write_lock, flush() is sync point. (2) Temporal date-anchoring \u2014 REFERENCE DATE at top of MCP system prompt, inclusive day-counting rule in type hint. (3) Confidence-seeded activation_count \u2014 high confidence (0.95+) seeds at 3, moderate (0.85+) at 2, weak at 1. (4) distinct_sessions field on Node \u2014 salience now weights cross-session persistence: reinforcement = log(activation_count) * (0.5 + 0.5 * log(distinct_sessions)). (5) Archived node isolation \u2014 find_seeds(), spread(), serialize() in activation.py now filter zone != active. (6) Reflector behavioral synthesis disabled \u2014 _synthesize_behavioral_preferences() returns 0, was generating keyword-noise PREFERENCE nodes.", "type": "EVENT", "salience": 0.391, "is_core": false, "zone": "active", "tags": [], "activation_count": 7, "created_at": "2026-03-28", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "04839ab5", "label": "Dory v0.5.0 temporal spot check result (2026-03-28): 90.0\u2026", "full": "Dory v0.5.0 temporal spot check result (2026-03-28): 90.0% on temporal-reasoning category (27/30 questions). Extractor: Haiku via Anthropic API. Answerer: claude-code-mcp (subscription). 3 failures were all retrieval/coverage gaps, not date-anchoring bugs. Previous v0.4.0 temporal score was 72.2% on full 500q run. evaluate_claude.py now exists in benchmarks/ as a Claude-as-judge evaluator (replaces GPT-4o judge, no OpenAI key needed).", "type": "EVENT", "salience": 0.392, "is_core": false, "zone": "active", "tags": [], "activation_count": 7, "created_at": "2026-03-28", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "18736053", "label": "Dory benchmark operational note: PyPI token in .env has t\u2026", "full": "Dory benchmark operational note: PyPI token in .env has trailing newline \u2014 must use tr -d '[:space:]' when reading with grep/cut, or twine upload fails with 403. Also: ANTHROPIC_API_KEY must be exported (not just set as inline env prefix) before passing as --api-key arg, otherwise shell expansion gives empty string.", "type": "CONCEPT", "salience": 0.391, "is_core": false, "zone": "active", "tags": [], "activation_count": 7, "created_at": "2026-03-28", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "71a5fcd9", "label": "v0.5 full 500q benchmark run started 2026-03-28 ~9:30AM. \u2026", "full": "v0.5 full 500q benchmark run started 2026-03-28 ~9:30AM. Output: benchmarks/predictions_v05_claudecode_mcp_full.jsonl. ~199/500 done as of ~10:30AM. Process PID 5799 still running. Backend: claude-code-mcp, extract: haiku, --resume flag set. 3 pre-existing arithmetic errors on gpt4_* temporal questions \u2014 not API errors. No 401s or spend-limit issues after Michael updated his spending limit. Resume at 2pm to check results and run evaluator.", "type": "EVENT", "salience": 0.384, "is_core": false, "zone": "active", "tags": [], "activation_count": 6, "created_at": "2026-03-28", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "8fedd3a3", "label": "If benchmark process dies, resume command: cd /Users/mich\u2026", "full": "If benchmark process dies, resume command: cd /Users/michael/Repo/Dory && source .env && python3 benchmarks/longmemeval.py --data benchmarks/data/longmemeval/longmemeval_oracle.json --output benchmarks/predictions_v05_claudecode_mcp_full.jsonl --backend anthropic --extract-model claude-haiku-4-5-20251001 --answer-backend claude-code-mcp --api-key $ANTHROPIC_API_KEY --resume --verbose", "type": "CONCEPT", "salience": 0.384, "is_core": false, "zone": "active", "tags": [], "activation_count": 6, "created_at": "2026-03-28", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "4f13eafd", "label": "Dory v0.7.0 shipped to GitHub (tagged v0.7.0) on 2026-04-\u2026", "full": "Dory v0.7.0 shipped to GitHub (tagged v0.7.0) on 2026-04-05. PyPI upload failed with 403 \u2014 token issue to resolve next session. Final benchmark: 84.2% (421/500). Category breakdown: knowledge-update 92.3%, multi-session 85.7%, single-session-assistant 92.9%, single-session-user 94.3%, temporal-reasoning 75.2%, preference 56.7%.", "type": "EVENT", "salience": 0.339, "is_core": false, "zone": "active", "tags": [], "activation_count": 2, "created_at": "2026-04-05", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "a6838a13", "label": "Dory v0.8.0 gameplan (decided 2026-04-05): (1) Add WORKIN\u2026", "full": "Dory v0.8.0 gameplan (decided 2026-04-05): (1) Add WORKING node type \u2014 ephemeral session-scoped facts seeded at activation_count=2 to clear salience floor, auto-archived after consolidation if not reinforced. Formalizes working memory tier. (2) Temporal context chronological ordering \u2014 sort _temporal_context by event_date metadata, not activation level. (3) Rename flush() to consolidate() as primary name. (4) Keep supersedes_hint field in Observer schema. Then run full 500q with Sonnet for both extraction AND answering (~$38), target \u226590% for v1.0 tag.", "type": "CONCEPT", "salience": 0.339, "is_core": false, "zone": "active", "tags": [], "activation_count": 2, "created_at": "2026-04-05", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "e7d48244", "label": "Dory v2.0 architectural direction (identified 2026-04-05)\u2026", "full": "Dory v2.0 architectural direction (identified 2026-04-05): Current retrieval is too heuristic \u2014 regex routing (_TEMPORAL_RE, _PREFERENCE_RE etc), hard thresholds (salience floor 0.1, supersession 0.45), manual max_nodes per context type, node type proliferation. Each heuristic was added to fix a specific benchmark failure and they interact unpredictably. The principled fix: unified retrieval path \u2014 spreading activation \u2192 top-k nodes \u2192 single LLM reasoning step, no branching on query type. Graph structure (SUPERSEDES edges, node types, metadata) becomes the signal instead of code-path switching. Mastra achieves 94.87% with this approach. Cost argument for heuristics is weak now that Haiku is cheap.", "type": "BELIEF", "salience": 0.339, "is_core": false, "zone": "active", "tags": [], "activation_count": 2, "created_at": "2026-04-05", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "8501b14d", "label": "Dory preference category regression finding (2026-04-05):\u2026", "full": "Dory preference category regression finding (2026-04-05): v0.7 preference score 56.7% vs v0.6 70.0%. Root cause: salience floor (0.1) filters single-session PREFERENCE nodes (activation_count=1 \u2192 salience=0). Tried PREFERENCE node floor exemption \u2014 net +1 (17\u219218/30) with 7 gains and 6 regressions, a wash. Regressions appear to be evaluator noise. Real fix is WORKING node type (seeds at activation_count=2, clears floor) + better extraction. Preference gap is also partly Observer extraction quality \u2014 implicit preferences not reliably extracted by Haiku.", "type": "CONCEPT", "salience": 0.339, "is_core": false, "zone": "active", "tags": [], "activation_count": 2, "created_at": "2026-04-05", "color": "#b39ddb", "opacity": 1.0, "superseded_at": null}, {"id": "ff2cbf0e", "label": "v0.8 Sonnet full run result (2026-04-05): 80.6% (403/500)\u2026", "full": "v0.8 Sonnet full run result (2026-04-05): 80.6% (403/500) \u2014 regression from v0.7's 84.2%. Two causes: (1) Switching answer backend from claude-code-mcp (agentic, can re-query Dory) to Anthropic API (static one-shot context) lost multi-query capability \u2014 drove knowledge-update -14pp, multi-session -10.5pp. (2) Sonnet extraction disrupted supersession chains vs Haiku extraction. BUT: temporal-reasoning jumped 75.2%\u219284.2% (+16 questions) confirming Sonnet extracts dates reliably. Key lesson: never change extractor AND answering backend in same run. Next run: Sonnet extraction + claude-code-mcp answering (~$25-30).", "type": "EVENT", "salience": 0.339, "is_core": false, "zone": "active", "tags": [], "activation_count": 2, "created_at": "2026-04-06", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "188c78ab", "label": "Critical finding (2026-04-05): claude-code-mcp answering \u2026", "full": "Critical finding (2026-04-05): claude-code-mcp answering backend is AGENTIC \u2014 Claude can call dory_query() multiple times, reformulate, and synthesize across multiple graph queries. Anthropic API answering is STATIC \u2014 one context string, one shot. The agentic path was driving knowledge-update (92.3%) and multi-session (85.7%) scores. This is not just a cost optimization \u2014 it is a qualitatively superior answering mechanism for questions requiring temporal synthesis or cross-session reasoning. Always use claude-code-mcp for answering in benchmarks.", "type": "BELIEF", "salience": 0.339, "is_core": false, "zone": "active", "tags": [], "activation_count": 2, "created_at": "2026-04-06", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}, {"id": "c2711d73", "label": "Dory v0.8 Sonnet+MCP benchmark completed 2026-04-07: 84.2\u2026", "full": "Dory v0.8 Sonnet+MCP benchmark completed 2026-04-07: 84.2% (421/500) \u2014 ties v0.7.0 best. Config: Sonnet extraction (claude-sonnet-4-6) + claude-code-mcp answering. Category breakdown: knowledge-update 87.2% (-5.1pp vs v0.7), multi-session 83.5% (-2.2pp), single-session-assistant 80.4% (-12.5pp), single-session-user 94.3% (flat), temporal-reasoning 82.7% (+7.5pp), preference 70.0% (+13.3pp), abstention 73.3% (+6.6pp). Report: docs/BENCHMARK_REPORT_v08_sonnet_mcp.md", "type": "EVENT", "salience": 0.301, "is_core": false, "zone": "active", "tags": [], "activation_count": 0, "created_at": "2026-04-08", "color": "#81c784", "opacity": 1.0, "superseded_at": null}, {"id": "c02a3da2", "label": "Dory benchmark ceiling appears to be ~84-85% with current\u2026", "full": "Dory benchmark ceiling appears to be ~84-85% with current heuristic retrieval architecture. Three runs hit this: v0.6 (84.0%), v0.7 (84.2%), v0.8-MCP (84.2%). Bottleneck is regex routing + hard thresholds + branching code paths, not extraction quality. Breaking 85% likely requires unified retrieval: spreading activation \u2192 top-k \u2192 single LLM reasoning step (no query-type branching). Mastra achieves 94.87% with this approach. This is the v2.0 architectural direction.", "type": "BELIEF", "salience": 0.301, "is_core": false, "zone": "active", "tags": [], "activation_count": 0, "created_at": "2026-04-08", "color": "#ef9a9a", "opacity": 1.0, "superseded_at": null}], "links": [{"source": "b3d67a2e", "target": "095db088", "type": "WORKS_ON", "weight": 0.727, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "dca85c1f", "type": "PREFERS", "weight": 0.727, "color": "#ffb74d"}, {"source": "e8a0e121", "target": "27a83e79", "type": "CO_OCCURS", "weight": 0.16, "color": "#4a7fa5"}, {"source": "e8a0e121", "target": "b3d67a2e", "type": "CO_OCCURS", "weight": 0.094, "color": "#4a7fa5"}, {"source": "e8a0e121", "target": "e1c52d06", "type": "CO_OCCURS", "weight": 0.216, "color": "#4a7fa5"}, {"source": "2add4167", "target": "27a83e79", "type": "CO_OCCURS", "weight": 0.16, "color": "#4a7fa5"}, {"source": "2add4167", "target": "e8a0e121", "type": "CO_OCCURS", "weight": 0.085, "color": "#4a7fa5"}, {"source": "2add4167", "target": "90453a5a", "type": "CO_OCCURS", "weight": 0.084, "color": "#4a7fa5"}, {"source": "27a83e79", "target": "e8a0e121", "type": "CO_OCCURS", "weight": 0.16, "color": "#4a7fa5"}, {"source": "27a83e79", "target": "2add4167", "type": "CO_OCCURS", "weight": 0.16, "color": "#4a7fa5"}, {"source": "27a83e79", "target": "b3d67a2e", "type": "CO_OCCURS", "weight": 0.17, "color": "#4a7fa5"}, {"source": "27a83e79", "target": "f200a778", "type": "CO_OCCURS", "weight": 0.215, "color": "#4a7fa5"}, {"source": "5e629514", "target": "662dfa53", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "5e629514", "target": "1e2fe00f", "type": "CO_OCCURS", "weight": 0.075, "color": "#4a7fa5"}, {"source": "5e629514", "target": "095db088", "type": "CO_OCCURS", "weight": 0.085, "color": "#4a7fa5"}, {"source": "662dfa53", "target": "5e629514", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "662dfa53", "target": "afadc8cd", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "662dfa53", "target": "095db088", "type": "CO_OCCURS", "weight": 0.085, "color": "#4a7fa5"}, {"source": "b6db5e3d", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b6db5e3d", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b6db5e3d", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b6db5e3d", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b6db5e3d", "target": "b5a05fee", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b5a05fee", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b5a05fee", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b5a05fee", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b5a05fee", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "b5a05fee", "target": "37bedf89", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "1cd87119", "target": "5c2a679b", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "1cd87119", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "1cd87119", "target": "6994dc84", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "db2bcfc1", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "db2bcfc1", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "db2bcfc1", "target": "8b184392", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "db2bcfc1", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "db2bcfc1", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "82b123f2", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "82b123f2", "target": "8b184392", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "82b123f2", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "82b123f2", "target": "2a2daba9", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "82b123f2", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "2a2daba9", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "2a2daba9", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "2a2daba9", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "2a2daba9", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "2a2daba9", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "d153e7e5", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "d153e7e5", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "d153e7e5", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "d153e7e5", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "d153e7e5", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "733d1af3", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "733d1af3", "target": "2a2daba9", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "733d1af3", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "733d1af3", "target": "35778da9", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "8b184392", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "8b184392", "target": "b5a05fee", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "8b184392", "target": "afadc8cd", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "3f73f6f2", "target": "561fac77", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "3f73f6f2", "target": "f200a778", "type": "CO_OCCURS", "weight": 0.215, "color": "#4a7fa5"}, {"source": "3f73f6f2", "target": "7fcc9d10", "type": "CO_OCCURS", "weight": 0.075, "color": "#4a7fa5"}, {"source": "3f73f6f2", "target": "6ec18a52", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "561fac77", "target": "3f73f6f2", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "561fac77", "target": "6ec18a52", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "561fac77", "target": "afadc8cd", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "561fac77", "target": "7fcc9d10", "type": "CO_OCCURS", "weight": 0.075, "color": "#4a7fa5"}, {"source": "f200a778", "target": "3f73f6f2", "type": "CO_OCCURS", "weight": 0.215, "color": "#4a7fa5"}, {"source": "f200a778", "target": "aeebed08", "type": "CO_OCCURS", "weight": 0.215, "color": "#4a7fa5"}, {"source": "f200a778", "target": "46ce2616", "type": "CO_OCCURS", "weight": 0.215, "color": "#4a7fa5"}, {"source": "6ec18a52", "target": "3f73f6f2", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "6ec18a52", "target": "46ce2616", "type": "CO_OCCURS", "weight": 0.075, "color": "#4a7fa5"}, {"source": "6ec18a52", "target": "01895b3f", "type": "CO_OCCURS", "weight": 0.074, "color": "#4a7fa5"}, {"source": "5e738a4a", "target": "3de0159c", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "5e738a4a", "target": "dd04e091", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "a3a78039", "target": "46ce2616", "type": "CO_OCCURS", "weight": 0.205, "color": "#4a7fa5"}, {"source": "a3a78039", "target": "f58715ce", "type": "CO_OCCURS", "weight": 0.205, "color": "#4a7fa5"}, {"source": "a3a78039", "target": "4c34ece1", "type": "CO_OCCURS", "weight": 0.205, "color": "#4a7fa5"}, {"source": "44bea39e", "target": "5e738a4a", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "44bea39e", "target": "3de0159c", "type": "CO_OCCURS", "weight": 0.332, "color": "#4a7fa5"}, {"source": "44bea39e", "target": "4f16eb37", "type": "CO_OCCURS", "weight": 0.332, "color": "#4a7fa5"}, {"source": "44bea39e", "target": "44cadfe1", "type": "CO_OCCURS", "weight": 0.333, "color": "#4a7fa5"}, {"source": "30507907", "target": "561fac77", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "30507907", "target": "3f73f6f2", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "30507907", "target": "afadc8cd", "type": "CO_OCCURS", "weight": 0.207, "color": "#4a7fa5"}, {"source": "30507907", "target": "44cadfe1", "type": "CO_OCCURS", "weight": 0.217, "color": "#4a7fa5"}, {"source": "fc8b9a86", "target": "07c6d058", "type": "CO_OCCURS", "weight": 0.316, "color": "#4a7fa5"}, {"source": "fc8b9a86", "target": "44cadfe1", "type": "CO_OCCURS", "weight": 0.326, "color": "#4a7fa5"}, {"source": "fc8b9a86", "target": "b079c537", "type": "CO_OCCURS", "weight": 0.316, "color": "#4a7fa5"}, {"source": "b079c537", "target": "fc8b9a86", "type": "CO_OCCURS", "weight": 0.316, "color": "#4a7fa5"}, {"source": "b079c537", "target": "07c6d058", "type": "CO_OCCURS", "weight": 0.316, "color": "#4a7fa5"}, {"source": "b079c537", "target": "4f16eb37", "type": "CO_OCCURS", "weight": 0.316, "color": "#4a7fa5"}, {"source": "b3d67a2e", "target": "37bedf89", "type": "WORKS_ON", "weight": 0.627, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "739a38bc", "type": "WORKS_ON", "weight": 0.627, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "46ce2616", "type": "WORKS_ON", "weight": 0.627, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "90453a5a", "type": "WORKS_ON", "weight": 0.627, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "5c2a679b", "type": "WORKS_ON", "weight": 0.634, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "df570556", "type": "WORKS_ON", "weight": 0.733, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "ef910f52", "type": "WORKS_ON", "weight": 0.627, "color": "#58a6ff"}, {"source": "b3d67a2e", "target": "164b5e31", "type": "RELATED_TO", "weight": 0.627, "color": "#4a7fa5"}, {"source": "b3d67a2e", "target": "6ce5c48b", "type": "PREFERS", "weight": 0.627, "color": "#ffb74d"}, {"source": "b3d67a2e", "target": "4bcbed96", "type": "PREFERS", "weight": 0.627, "color": "#ffb74d"}, {"source": "b3d67a2e", "target": "7fcc9d10", "type": "PREFERS", "weight": 0.627, "color": "#ffb74d"}, {"source": "37bedf89", "target": "dd04e091", "type": "USES", "weight": 0.57, "color": "#58a6ff"}, {"source": "37bedf89", "target": "dd9519f4", "type": "USES", "weight": 0.588, "color": "#58a6ff"}, {"source": "37bedf89", "target": "07c6d058", "type": "USES", "weight": 0.726, "color": "#58a6ff"}, {"source": "37bedf89", "target": "7def9062", "type": "INSTANCE_OF", "weight": 0.616, "color": "#4a7fa5"}, {"source": "37bedf89", "target": "1e2fe00f", "type": "RELATED_TO", "weight": 0.57, "color": "#4a7fa5"}, {"source": "739a38bc", "target": "dd04e091", "type": "USES", "weight": 0.485, "color": "#58a6ff"}, {"source": "739a38bc", "target": "4c2ba47f", "type": "USES", "weight": 0.484, "color": "#58a6ff"}, {"source": "739a38bc", "target": "aeebed08", "type": "USES", "weight": 0.606, "color": "#58a6ff"}, {"source": "739a38bc", "target": "7def9062", "type": "INSTANCE_OF", "weight": 0.607, "color": "#4a7fa5"}, {"source": "46ce2616", "target": "aeebed08", "type": "USES", "weight": 0.616, "color": "#58a6ff"}, {"source": "46ce2616", "target": "f58715ce", "type": "USES", "weight": 0.494, "color": "#58a6ff"}, {"source": "46ce2616", "target": "4c34ece1", "type": "USES", "weight": 0.494, "color": "#58a6ff"}, {"source": "46ce2616", "target": "01895b3f", "type": "RELATED_TO", "weight": 0.494, "color": "#4a7fa5"}, {"source": "df570556", "target": "c1964259", "type": "USES", "weight": 0.733, "color": "#58a6ff"}, {"source": "095db088", "target": "afadc8cd", "type": "USES", "weight": 0.633, "color": "#58a6ff"}, {"source": "5c2a679b", "target": "9dcfeeb3", "type": "USES", "weight": 0.634, "color": "#58a6ff"}, {"source": "5c2a679b", "target": "6994dc84", "type": "CAUSED", "weight": 0.634, "color": "#4a7fa5"}, {"source": "5c2a679b", "target": "dd9519f4", "type": "RELATED_TO", "weight": 0.634, "color": "#4a7fa5"}, {"source": "23087944", "target": "07c6d058", "type": "RELATED_TO", "weight": 0.717, "color": "#4a7fa5"}, {"source": "23087944", "target": "6461c347", "type": "RELATED_TO", "weight": 0.607, "color": "#4a7fa5"}, {"source": "e1c52d06", "target": "7def9062", "type": "INSTANCE_OF", "weight": 0.608, "color": "#4a7fa5"}, {"source": "35778da9", "target": "7def9062", "type": "INSTANCE_OF", "weight": 0.608, "color": "#4a7fa5"}, {"source": "dca85c1f", "target": "f15013bf", "type": "RELATED_TO", "weight": 0.484, "color": "#4a7fa5"}, {"source": "44cadfe1", "target": "7def9062", "type": "RELATED_TO", "weight": 0.626, "color": "#4a7fa5"}, {"source": "44cadfe1", "target": "07c6d058", "type": "RELATED_TO", "weight": 0.626, "color": "#4a7fa5"}, {"source": "4f16eb37", "target": "07c6d058", "type": "RELATED_TO", "weight": 0.626, "color": "#4a7fa5"}, {"source": "4f16eb37", "target": "44cadfe1", "type": "RELATED_TO", "weight": 0.626, "color": "#4a7fa5"}, {"source": "b28b69e9", "target": "44cadfe1", "type": "RELATED_TO", "weight": 0.626, "color": "#4a7fa5"}, {"source": "b28b69e9", "target": "7def9062", "type": "RELATED_TO", "weight": 0.497, "color": "#4a7fa5"}, {"source": "ff7f7c99", "target": "07c6d058", "type": "RELATED_TO", "weight": 0.616, "color": "#4a7fa5"}, {"source": "ff7f7c99", "target": "4f16eb37", "type": "RELATED_TO", "weight": 0.626, "color": "#4a7fa5"}, {"source": "24a746d2", "target": "afadc8cd", "type": "CO_OCCURS", "weight": 0.349, "color": "#4a7fa5"}, {"source": "24a746d2", "target": "23087944", "type": "CO_OCCURS", "weight": 0.349, "color": "#4a7fa5"}, {"source": "24a746d2", "target": "561fac77", "type": "CO_OCCURS", "weight": 0.349, "color": "#4a7fa5"}, {"source": "24a746d2", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.349, "color": "#4a7fa5"}, {"source": "24a746d2", "target": "b3d67a2e", "type": "CO_OCCURS", "weight": 0.349, "color": "#4a7fa5"}, {"source": "eb67c2b2", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "eb67c2b2", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "eb67c2b2", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "eb67c2b2", "target": "8b184392", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "eb67c2b2", "target": "df570556", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "1b68dc66", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "1b68dc66", "target": "2a2daba9", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "1b68dc66", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "1b68dc66", "target": "5c2a679b", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "1b68dc66", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "a0911b9a", "target": "733d1af3", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "a0911b9a", "target": "1b68dc66", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "a0911b9a", "target": "df570556", "type": "CO_OCCURS", "weight": 0.252, "color": "#4a7fa5"}, {"source": "a0911b9a", "target": "c1964259", "type": "CO_OCCURS", "weight": 0.252, "color": "#4a7fa5"}, {"source": "a0911b9a", "target": "afadc8cd", "type": "CO_OCCURS", "weight": 0.252, "color": "#4a7fa5"}, {"source": "15294244", "target": "44bea39e", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "15294244", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "15294244", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "15294244", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.359, "color": "#4a7fa5"}, {"source": "13ab5047", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "13ab5047", "target": "44bea39e", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "13ab5047", "target": "15294244", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "13ab5047", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "13ab5047", "target": "d153e7e5", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "79a894e6", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "79a894e6", "target": "15294244", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "79a894e6", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "79a894e6", "target": "44bea39e", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "79a894e6", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "a39d86f8", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "a39d86f8", "target": "24a746d2", "type": "CO_OCCURS", "weight": 0.373, "color": "#4a7fa5"}, {"source": "a39d86f8", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "a39d86f8", "target": "44bea39e", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "a39d86f8", "target": "30507907", "type": "CO_OCCURS", "weight": 0.38, "color": "#4a7fa5"}, {"source": "d7432bb0", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.383, "color": "#4a7fa5"}, {"source": "d7432bb0", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.383, "color": "#4a7fa5"}, {"source": "d7432bb0", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.383, "color": "#4a7fa5"}, {"source": "d7432bb0", "target": "2a2daba9", "type": "CO_OCCURS", "weight": 0.383, "color": "#4a7fa5"}, {"source": "d7432bb0", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.383, "color": "#4a7fa5"}, {"source": "d5e1e2a1", "target": "15294244", "type": "CO_OCCURS", "weight": 0.436, "color": "#4a7fa5"}, {"source": "d5e1e2a1", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.436, "color": "#4a7fa5"}, {"source": "d5e1e2a1", "target": "44bea39e", "type": "CO_OCCURS", "weight": 0.436, "color": "#4a7fa5"}, {"source": "d5e1e2a1", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.436, "color": "#4a7fa5"}, {"source": "d5e1e2a1", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.436, "color": "#4a7fa5"}, {"source": "41475305", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "41475305", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "41475305", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "41475305", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "41475305", "target": "27a83e79", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "9d9d42d5", "target": "41475305", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "9d9d42d5", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "9d9d42d5", "target": "24a746d2", "type": "CO_OCCURS", "weight": 0.43, "color": "#4a7fa5"}, {"source": "9d9d42d5", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "9d9d42d5", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "7c105137", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "7c105137", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "7c105137", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "7c105137", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "83d67852", "target": "9d9d42d5", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "83d67852", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "83d67852", "target": "41475305", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "83d67852", "target": "db2bcfc1", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "83d67852", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "04839ab5", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "04839ab5", "target": "24a746d2", "type": "CO_OCCURS", "weight": 0.43, "color": "#4a7fa5"}, {"source": "04839ab5", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "04839ab5", "target": "9d9d42d5", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "04839ab5", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "18736053", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "18736053", "target": "41475305", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "18736053", "target": "15294244", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "18736053", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "18736053", "target": "eb67c2b2", "type": "CO_OCCURS", "weight": 0.437, "color": "#4a7fa5"}, {"source": "71a5fcd9", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "71a5fcd9", "target": "24a746d2", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "71a5fcd9", "target": "9d9d42d5", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "71a5fcd9", "target": "04839ab5", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "71a5fcd9", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "8fedd3a3", "target": "71a5fcd9", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "8fedd3a3", "target": "15294244", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "8fedd3a3", "target": "18736053", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "8fedd3a3", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "8fedd3a3", "target": "4f16eb37", "type": "CO_OCCURS", "weight": 0.44, "color": "#4a7fa5"}, {"source": "4f13eafd", "target": "18736053", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "4f13eafd", "target": "83d67852", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "4f13eafd", "target": "41475305", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "4f13eafd", "target": "b6db5e3d", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "4f13eafd", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "a6838a13", "target": "83d67852", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "a6838a13", "target": "d7432bb0", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "a6838a13", "target": "82b123f2", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "a6838a13", "target": "79a894e6", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "a6838a13", "target": "7c105137", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "e7d48244", "target": "1cd87119", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "e7d48244", "target": "41475305", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "e7d48244", "target": "15294244", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "e7d48244", "target": "7c105137", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "e7d48244", "target": "13ab5047", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "8501b14d", "target": "4f13eafd", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "8501b14d", "target": "e7d48244", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "8501b14d", "target": "41475305", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "8501b14d", "target": "04839ab5", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "8501b14d", "target": "7c105137", "type": "CO_OCCURS", "weight": 0.482, "color": "#4a7fa5"}, {"source": "ff2cbf0e", "target": "8fedd3a3", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "ff2cbf0e", "target": "71a5fcd9", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "ff2cbf0e", "target": "04839ab5", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "ff2cbf0e", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "ff2cbf0e", "target": "24a746d2", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "188c78ab", "target": "ff2cbf0e", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "188c78ab", "target": "8fedd3a3", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "188c78ab", "target": "71a5fcd9", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "188c78ab", "target": "5e629514", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "188c78ab", "target": "04839ab5", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c2711d73", "target": "ff2cbf0e", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c2711d73", "target": "188c78ab", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c2711d73", "target": "8fedd3a3", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c2711d73", "target": "a39d86f8", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c2711d73", "target": "71a5fcd9", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c02a3da2", "target": "e7d48244", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c02a3da2", "target": "c2711d73", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c02a3da2", "target": "8fedd3a3", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c02a3da2", "target": "ff7f7c99", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}, {"source": "c02a3da2", "target": "7def9062", "type": "CO_OCCURS", "weight": 0.5, "color": "#4a7fa5"}]};
+const RAW_STATS   = {"nodes": 89, "edges": 13450, "core_nodes": 62, "active": 88, "archived": 1, "expired": 0};
+const DEMO_QUERIES = [];
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderFallbackView() {
+  document.getElementById("graph-svg").style.display = "none";
+  document.getElementById("tooltip").style.display = "none";
+  document.getElementById("query-panel").style.display = "none";
+  document.getElementById("legend").style.display = "none";
+  document.getElementById("edge-legend").style.display = "none";
+  document.getElementById("zone-controls").style.display = "none";
+
+  const notice = document.getElementById("offline-notice");
+  notice.style.display = "block";
+  notice.innerHTML =
+    "<strong>Local-only mode</strong><br>" +
+    "Interactive graph rendering is disabled because this HTML was generated without remote JavaScript. " +
+    "The full node and edge data are still available below. " +
+    "Regenerate with <code>allow_remote_js=True</code> if you explicitly want the remote D3 view.";
+
+  const fallback = document.getElementById("fallback-view");
+  fallback.style.display = "block";
+
+  const nodeRows = RAW_DATA.nodes
+    .map(n => `
+      <div class="fallback-row">
+        <div class="fallback-type">${escapeHtml(n.type)}${n.is_core ? " [CORE]" : ""}</div>
+        <div>${escapeHtml(n.full)}</div>
+        <div class="fallback-meta">zone=${escapeHtml(n.zone)} · salience=${escapeHtml(n.salience)} · activations=${escapeHtml(n.activation_count)}</div>
+      </div>`)
+    .join("");
+
+  const edgeRows = RAW_DATA.links
+    .map(e => `
+      <div class="fallback-row">
+        <div class="fallback-type">${escapeHtml(e.type)}</div>
+        <div>${escapeHtml(e.source)} → ${escapeHtml(e.target)}</div>
+        <div class="fallback-meta">weight=${escapeHtml(e.weight)}</div>
+      </div>`)
+    .join("");
+
+  fallback.innerHTML = `
+    <div class="fallback-section">
+      <h3>Nodes (${RAW_DATA.nodes.length})</h3>
+      ${nodeRows || '<div class="fallback-row">No nodes.</div>'}
+    </div>
+    <div class="fallback-section">
+      <h3>Edges (${RAW_DATA.links.length})</h3>
+      ${edgeRows || '<div class="fallback-row">No edges.</div>'}
+    </div>`;
+
+  document.getElementById("detail-content").innerHTML =
+    '<span style="color:#8b949e">Local-only fallback view. The interactive graph is disabled.</span>';
+}
+
+if (!window.d3) {
+  document.getElementById("s-nodes").textContent    = RAW_STATS.nodes      ?? 0;
+  document.getElementById("s-edges").textContent    = RAW_STATS.edges      ?? 0;
+  document.getElementById("s-core").textContent     = RAW_STATS.core_nodes ?? 0;
+  document.getElementById("s-archived").textContent = RAW_STATS.archived   ?? 0;
+  renderFallbackView();
+} else {
+
+// Populate stats
+document.getElementById("s-nodes").textContent    = RAW_STATS.nodes      ?? 0;
+document.getElementById("s-edges").textContent    = RAW_STATS.edges      ?? 0;
+document.getElementById("s-core").textContent     = RAW_STATS.core_nodes ?? 0;
+document.getElementById("s-archived").textContent = RAW_STATS.archived   ?? 0;
+
+// ---- State ----
+let activeZones   = new Set(["active", "archived"]);
+let hiddenTypes   = new Set();
+let selectedNode  = null;
+let activeQuery   = null;
+
+// ---- Build query chips ----
+const examplesEl = document.getElementById("query-examples");
+DEMO_QUERIES.forEach((q, i) => {
+  const chip = document.createElement("button");
+  chip.className = "query-chip";
+  chip.textContent = q.text;
+  chip.onclick = () => runQuery(i);
+  examplesEl.appendChild(chip);
+});
+
+document.getElementById("query-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const text = e.target.value.trim();
+    if (!text) return;
+    const idx = DEMO_QUERIES.findIndex(q =>
+      q.text.toLowerCase().includes(text.toLowerCase()) ||
+      text.toLowerCase().includes(q.text.toLowerCase().split(" ")[0])
+    );
+    if (idx >= 0) runQuery(idx);
+  }
+});
+
+// ---- SVG setup ----
+const svg    = d3.select("#graph-svg");
+const width  = () => document.getElementById("graph-area").clientWidth;
+const height = () => document.getElementById("graph-area").clientHeight;
+
+const container = svg.append("g");
+
+svg.call(
+  d3.zoom()
+    .scaleExtent([0.1, 4])
+    .on("zoom", (event) => container.attr("transform", event.transform))
+);
+
+// Arrow marker
+svg.append("defs").append("marker")
+  .attr("id", "arrowhead")
+  .attr("viewBox", "0 -4 8 8")
+  .attr("refX", 18).attr("refY", 0)
+  .attr("markerWidth", 6).attr("markerHeight", 6)
+  .attr("orient", "auto")
+  .append("path")
+    .attr("d", "M0,-4L8,0L0,4")
+    .attr("fill", "#30363d");
+
+// ---- Simulation ----
+let simulation = null;
+let linkSel, nodeSel, labelSel, coreRingSel, edgeLabelSel;
+
+function nodeRadius(d) {
+  const base = 8 + d.salience * 16;
+  return Math.max(8, Math.min(24, base));
+}
+
+function visibleData() {
+  const nodes = RAW_DATA.nodes.filter(n =>
+    activeZones.has(n.zone) && !hiddenTypes.has(n.type)
+  );
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const links = RAW_DATA.links.filter(l =>
+    nodeIds.has(l.source.id ?? l.source) &&
+    nodeIds.has(l.target.id ?? l.target)
+  );
+  return { nodes, links };
+}
+
+function buildGraph() {
+  container.selectAll("*").remove();
+
+  const { nodes, links } = visibleData();
+
+  const nodesCopy = nodes.map(d => ({ ...d }));
+  const nodeMap   = new Map(nodesCopy.map(d => [d.id, d]));
+  const linksCopy = links.map(l => ({
+    ...l,
+    source: nodeMap.get(l.source.id ?? l.source) ?? l.source,
+    target: nodeMap.get(l.target.id ?? l.target) ?? l.target,
+  }));
+
+  if (simulation) simulation.stop();
+  simulation = d3.forceSimulation(nodesCopy)
+    .force("link",    d3.forceLink(linksCopy).id(d => d.id).distance(d => 55 + (1 - d.weight) * 40).strength(0.8))
+    .force("charge",  d3.forceManyBody().strength(d => -150 - d.salience * 180))
+    .force("x",       d3.forceX(width() / 2).strength(0.06))
+    .force("y",       d3.forceY(height() / 2).strength(0.06))
+    .force("collide", d3.forceCollide(d => nodeRadius(d) + 5))
+    .alphaDecay(0.012)
+    .velocityDecay(0.35);
+
+  // Links — colored by type, dashed for SUPERSEDES
+  linkSel = container.append("g").selectAll("line")
+    .data(linksCopy).join("line")
+    .attr("class", "link")
+    .attr("stroke",           d => d.color || "#4a7fa5")
+    .attr("stroke-width",     d => d.type === "SUPERSEDES" ? 2 : Math.max(1, d.weight * 2.5))
+    .attr("stroke-dasharray", d => d.type === "SUPERSEDES" ? "6,3" : null)
+    .attr("marker-end", "url(#arrowhead)");
+
+  // Edge labels (shown on hover)
+  edgeLabelSel = container.append("g").selectAll("text")
+    .data(linksCopy).join("text")
+    .attr("class", "edge-label")
+    .text(d => d.type)
+    .style("display", "none");
+
+  // Nodes
+  const nodeGroup = container.append("g").selectAll("g")
+    .data(nodesCopy).join("g")
+    .attr("class", "node")
+    .call(
+      d3.drag()
+        .on("start", (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on("drag",  (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on("end",   (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+
+  nodeGroup.append("circle")
+    .attr("r",      d => nodeRadius(d))
+    .attr("fill",   d => d.color)
+    .attr("fill-opacity", d => d.opacity)
+    .attr("stroke", d => d.zone === "archived" ? "#f85149" : "none")
+    .attr("stroke-dasharray", d => d.zone === "archived" ? "4,2" : null)
+    .attr("stroke-width", 1.5);
+
+  // Core ring
+  coreRingSel = nodeGroup.filter(d => d.is_core)
+    .append("circle")
+    .attr("class", "core-ring")
+    .attr("r", d => nodeRadius(d) + 4);
+
+  // Labels
+  labelSel = nodeGroup.append("text")
+    .attr("class", "node-label")
+    .attr("dy", d => nodeRadius(d) + 12)
+    .text(d => d.label.length > 28 ? d.label.slice(0, 26) + "…" : d.label)
+    .style("display", null);
+
+  // Tooltip
+  const tooltip = document.getElementById("tooltip");
+  nodeGroup
+    .on("mouseover", (event, d) => {
+      const archivedTag = d.zone === "archived" ? " ⚠ ARCHIVED" : "";
+      document.getElementById("tt-type").textContent    = d.type + (d.is_core ? " ★ CORE" : "") + archivedTag;
+      document.getElementById("tt-content").textContent = d.label;
+      tooltip.style.opacity = "1";
+    })
+    .on("mousemove", (event) => {
+      tooltip.style.left = (event.offsetX + 12) + "px";
+      tooltip.style.top  = (event.offsetY - 8)  + "px";
+    })
+    .on("mouseout",  () => { tooltip.style.opacity = "0"; })
+    .on("click", (event, d) => {
+      event.stopPropagation();
+      selectNode(d, nodeGroup, linksCopy, nodeMap);
+    });
+
+  // Edge label on hover
+  linkSel
+    .on("mouseover", function(event, d) {
+      d3.select(this).attr("stroke-opacity", 1).attr("stroke-width", d => Math.max(2, d.weight * 4));
+      const idx = linksCopy.indexOf(d);
+      edgeLabelSel.filter((_, i) => i === idx).style("display", null);
+    })
+    .on("mouseout",  function(event, d) {
+      d3.select(this).attr("stroke-opacity", 0.55).attr("stroke-width", d => d.type === "SUPERSEDES" ? 2 : Math.max(1, d.weight * 2.5));
+      edgeLabelSel.style("display", "none");
+    });
+
+  svg.on("click", () => clearSelection(nodeGroup));
+
+  simulation.on("tick", () => {
+    linkSel
+      .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+
+    edgeLabelSel
+      .attr("x", d => (d.source.x + d.target.x) / 2)
+      .attr("y", d => (d.source.y + d.target.y) / 2);
+
+    nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+
+  simulation.on("end", () => fitToView(nodesCopy));
+
+  // Re-apply active query highlight if any
+  if (activeQuery !== null) applyQueryHighlight(activeQuery);
+}
+
+function fitToView(nodes) {
+  if (!nodes || !nodes.length) return;
+  const pad = 80;
+  const xs = nodes.map(d => d.x).filter(v => v != null);
+  const ys = nodes.map(d => d.y).filter(v => v != null);
+  if (!xs.length) return;
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const w = width(), h = height();
+  const scale = Math.min(0.95, Math.min(w / (x1 - x0 + pad * 2), h / (y1 - y0 + pad * 2)));
+  const tx = w / 2 - scale * (x0 + x1) / 2;
+  const ty = h / 2 - scale * (y0 + y1) / 2;
+  svg.transition().duration(700).call(
+    d3.zoom().transform,
+    d3.zoomIdentity.translate(tx, ty).scale(scale)
+  );
+}
+
+// ---- Query mode ----
+function runQuery(idx) {
+  activeQuery = idx;
+  const q = DEMO_QUERIES[idx];
+
+  // Update chip styles
+  document.querySelectorAll(".query-chip").forEach((c, i) => {
+    c.classList.toggle("active", i === idx);
+  });
+  document.getElementById("query-input").value = q.text;
+
+  // Routing badge
+  const badgeEl = document.getElementById("route-badge");
+  badgeEl.style.display = "block";
+  badgeEl.innerHTML = `Route: <span class="badge badge-${q.route}">${q.route}</span>`;
+
+  // Activation list
+  const listEl = document.getElementById("activation-list");
+  listEl.style.display = "block";
+  const sorted = Object.entries(q.activated).sort((a, b) => b[1] - a[1]).slice(0, 7);
+  listEl.innerHTML = "<div style='font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;'>Why these surfaced</div>" +
+    sorted.map(([nid, level]) => {
+      const node = RAW_DATA.nodes.find(n => n.id === nid);
+      if (!node) return "";
+      const pct = Math.round(level * 100);
+      return `<div class="activated-item" onclick="window.highlightById('${nid}')">
+        <div class="activated-item-header">
+          <span class="activated-item-type">${node.type}</span>
+          <span style="color:#58a6ff;font-size:10px">${pct}%</span>
+        </div>
+        <span class="activated-item-label">${node.label}</span>
+        <div class="activation-bar-wrap"><div class="activation-bar" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join("");
+
+  document.getElementById("clear-query").style.display = "block";
+
+  applyQueryHighlight(idx);
+}
+
+function applyQueryHighlight(idx) {
+  const q = DEMO_QUERIES[idx];
+  const activated = q.activated;
+
+  container.selectAll(".node").each(function(d) {
+    const level = activated[d.id] || 0;
+    const circle = d3.select(this).select("circle");
+    if (level > 0) {
+      circle.attr("fill-opacity", Math.max(0.6, level));
+      if (level > 0.5) {
+        circle.style("filter", `drop-shadow(0 0 ${Math.round(4 + level * 8)}px ${d.color})`);
+      } else {
+        circle.style("filter", null);
+      }
+    } else {
+      circle.attr("fill-opacity", d.opacity * 0.12).style("filter", null);
+    }
+  });
+
+  if (linkSel) {
+    linkSel.attr("stroke-opacity", l => {
+      const s = l.source.id ?? l.source;
+      const t = l.target.id ?? l.target;
+      return (activated[s] > 0 && activated[t] > 0) ? 0.85 : 0.06;
+    });
+  }
+}
+
+function clearQuery() {
+  activeQuery = null;
+  document.querySelectorAll(".query-chip").forEach(c => c.classList.remove("active"));
+  document.getElementById("query-input").value = "";
+  document.getElementById("route-badge").style.display = "none";
+  document.getElementById("activation-list").style.display = "none";
+  document.getElementById("clear-query").style.display = "none";
+
+  container.selectAll(".node circle")
+    .attr("fill-opacity", d => d.opacity)
+    .style("filter", null);
+  if (linkSel) linkSel.attr("stroke-opacity", 0.55);
+}
+
+// ---- Node selection ----
+function selectNode(d, nodeGroup, linksCopy, nodeMap) {
+  selectedNode = d.id;
+  nodeGroup.classed("selected", n => n.id === d.id);
+
+  const connectedIds = new Set([d.id]);
+  const connectedLinks = linksCopy.filter(l => {
+    const s = l.source.id ?? l.source;
+    const t = l.target.id ?? l.target;
+    if (s === d.id || t === d.id) { connectedIds.add(s); connectedIds.add(t); return true; }
+    return false;
+  });
+
+  nodeGroup.selectAll("circle").attr("fill-opacity", n =>
+    connectedIds.has(n.id) ? n.opacity : n.opacity * 0.2
+  );
+  if (linkSel) linkSel.attr("stroke-opacity", l => {
+    const s = l.source.id ?? l.source;
+    const t = l.target.id ?? l.target;
+    return (s === d.id || t === d.id) ? 0.9 : 0.08;
+  });
+
+  const panel  = document.getElementById("detail-content");
+  const coreBadge     = d.is_core    ? '<span class="core-badge">★ CORE MEMORY</span>' : "";
+  const archivedBadge = d.zone === "archived" ? '<span class="archived-badge">⚠ ARCHIVED</span>' : "";
+  const tagStr = d.tags.length ? d.tags.join(", ") : "—";
+
+  const connections = connectedLinks.map(l => {
+    const otherId = (l.source.id ?? l.source) === d.id ? (l.target.id ?? l.target) : (l.source.id ?? l.source);
+    const other   = nodeMap.get(otherId);
+    const dir     = (l.source.id ?? l.source) === d.id ? "→" : "←";
+    if (!other) return "";
+    const edgeColor = l.color || "#58a6ff";
+    return `<div class="connected-node" onclick="highlightById('${other.id}')">
+      <span class="edge-type" style="color:${edgeColor}">${dir} ${l.type}</span><br>
+      <span class="node-label">${other.label}</span>
+    </div>`;
+  }).join("");
+
+  panel.innerHTML = `
+    <div style="margin-bottom:8px">${coreBadge}${archivedBadge}</div>
+    <div class="detail-node-content">${d.full}</div>
+    <div class="detail-row"><span class="detail-key">Type</span>        <span class="detail-val">${d.type}</span></div>
+    <div class="detail-row"><span class="detail-key">Zone</span>        <span class="detail-val">${d.zone}</span></div>
+    <div class="detail-row"><span class="detail-key">Salience</span>    <span class="detail-val">${d.salience}</span></div>
+    <div class="detail-row"><span class="detail-key">Activations</span> <span class="detail-val">${d.activation_count}</span></div>
+    <div class="detail-row"><span class="detail-key">Created</span>     <span class="detail-val">${d.created_at}</span></div>
+    <div class="detail-row"><span class="detail-key">Tags</span>        <span class="detail-val">${tagStr}</span></div>
+    ${d.superseded_at ? `<div class="detail-row"><span class="detail-key">Superseded</span><span class="detail-val" style="color:#f85149">${d.superseded_at.slice(0,10)}</span></div>` : ""}
+    ${connections ? `<div style="margin-top:12px;font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Connections (${connectedLinks.length})</div>${connections}` : ""}
+  `;
+}
+
+function clearSelection(nodeGroup) {
+  selectedNode = null;
+  nodeGroup.classed("selected", false);
+  if (activeQuery !== null) {
+    applyQueryHighlight(activeQuery);
+  } else {
+    nodeGroup.selectAll("circle").attr("fill-opacity", d => d.opacity);
+    if (linkSel) linkSel.attr("stroke-opacity", 0.55);
+  }
+  document.getElementById("detail-content").innerHTML = '<span style="color:#484f58">Click a node to inspect it.</span>';
+}
+
+// ---- Zone toggle ----
+document.querySelectorAll(".zone-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const zone = btn.dataset.zone;
+    if (activeZones.has(zone)) { activeZones.delete(zone); btn.classList.remove("active"); }
+    else                       { activeZones.add(zone);    btn.classList.add("active"); }
+    buildGraph();
+  });
+});
+
+// ---- Type legend toggle ----
+document.querySelectorAll(".legend-item").forEach(item => {
+  item.addEventListener("click", () => {
+    const type = item.dataset.type;
+    if (hiddenTypes.has(type)) { hiddenTypes.delete(type); item.classList.remove("dimmed"); }
+    else                       { hiddenTypes.add(type);    item.classList.add("dimmed"); }
+    buildGraph();
+  });
+});
+
+// ---- Search ----
+document.getElementById("search-input").addEventListener("input", function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) {
+    container.selectAll(".node circle").attr("fill-opacity", d => d.opacity);
+    return;
+  }
+  container.selectAll(".node").each(function(d) {
+    const match = d.full.toLowerCase().includes(q) || d.tags.some(t => t.toLowerCase().includes(q));
+    d3.select(this).select("circle").attr("fill-opacity", match ? d.opacity : d.opacity * 0.08);
+    d3.select(this).select(".node-label").style("opacity", match ? 1 : 0.1);
+  });
+});
+
+// ---- Init ----
+buildGraph();
+window.addEventListener("resize", buildGraph);
+
+window.highlightById = function(id) {
+  const nodeGroup = container.selectAll(".node");
+  const nodesCopy = nodeGroup.data();
+  const nodeMap   = new Map(nodesCopy.map(d => [d.id, d]));
+  const d         = nodeMap.get(id);
+  if (!d) return;
+  const linksCopy = linkSel ? linkSel.data() : [];
+  selectNode(d, nodeGroup, linksCopy, nodeMap);
+};
+}
+</script>
+</body>
+</html>

@@ -180,7 +180,7 @@ This is the absolute threshold applied to a relative score problem in its cleare
 
 The attempted fix: exempting PREFERENCE nodes from the salience floor. The result: net +1 question (17 → 18) across 30 preference questions, with 7 gains and 6 regressions. Within evaluator noise. The regressions appeared to be preference-routing-caused wrong answers surfacing previously-filtered generic nodes. The floor exemption wasn't the solution.
 
-The correct solution — WORKING node type seeded at `activation_count=2` — was identified but not yet validated.
+The correct solution — WORKING node type seeded at `activation_count=2` — was identified but not yet validated against preference benchmark questions. Whether it actually improves preference recall depends on whether Observer *types* single-session preferences as WORKING rather than PREFERENCE. That's an extraction quality question, not a retrieval question, and it requires targeted inspection of extraction output on failing preference questions — not a full 500q run.
 
 The honest summary: knowledge-update jumped to 92.3% (+5.1pp), multi-session reached 85.7% (+1.5pp), single-session-user hit 94.3% (+1.4pp). Four questions of net improvement were erased by the four-question preference regression. v0.7 shipped at essentially the same overall score as v0.6.
 
@@ -293,63 +293,74 @@ Mastra Observational Memory achieves 94.87% on LongMemEval with this approach. T
 
 ## Where Things Stand
 
-**Code state:** v0.8 branch. Three changes committed to main, not yet versioned:
-- WORKING node type (seeded at activation_count=2, clears salience floor, self-archives after consolidation)
-- Temporal chronological ordering in `_temporal_context()`
-- `flush()` → `consolidate()` rename (backward-compatible)
+**Code state:** v0.9.0 — versioned and ready for PyPI.
+- Unified retrieval path — `_route_query()` and all five context builders removed; `_serialize_structured()` is the sole retrieval path
+- Dead code removed — ~440 lines of routing heuristics and helper functions eliminated from `session.py`
+- REFINES edge type — elaboration distinct from replacement
+- `dory explain` CLI command — provenance inspection
+- MCP visualization loads D3.js (fix shipped in v0.8.1)
 
-**PyPI state:** v0.7.0 is the current release.
+**PyPI state:** v0.8.1 is the current release. v0.9 not yet versioned.
 
-**Benchmark state:** 84.2% is the honest current performance. The v0.8-MCP run represents the best configuration: Sonnet extraction, agentic MCP answering. This is what gets shipped as v0.8.0.
-
-**The single-session-assistant regression** (-12.5pp vs v0.7) is unexplained and needs investigation before making claims about improvement over v0.7. Hypothesis: Sonnet extracts assistant utterances by abstracting/summarizing rather than quoting, losing the specificity needed to answer "what advice did you give me about X?" This is a targeted extraction audit, not a full benchmark run.
+**Benchmark state:** 84.2% is the last measured performance (v0.8-MCP). The v0.9 unified retrieval path is unvalidated — no credits for a 500q run. Architecture is correct; score is TBD.
 
 ---
 
-## What I Want to Try
+## v0.9 — Unified Retrieval and Structural Improvements
 
-These are ordered by impact-to-cost ratio, not by ambition.
+The work done after v0.8 didn't require a benchmark run. The direction was clear from the ceiling analysis. These are correctness and architecture changes, not score-chasing.
 
-### Near-term (cheap, targeted)
-
-**1. Version v0.8.0 and push to PyPI.**
-The code is stable, the benchmark validates it, and it's been sitting unreleased. The only thing missing is a version bump and `twine upload`. Do this first — it closes the loop on a month of work.
-
-**2. Single-session-assistant extraction audit.**
-Pull the 11 questions where v0.8-MCP failed but v0.7 succeeded. Run extraction on those 11 conversations with both Haiku and Sonnet. Compare the extracted nodes side by side. Determine: is Sonnet abstracting assistant utterances? If yes, add verbatim-preservation instruction to the Observer prompt specifically for assistant turns. Targeted fix, no full run needed to validate.
-
-**3. Relative salience floor.**
-Replace `SALIENCE_FLOOR = 0.1` with `salience < percentile(active_nodes, 15)`. One function change in `activation.py`. The current floor is an absolute threshold on a relative score — as graphs grow, it increasingly filters nodes that would have cleared the floor in smaller graphs. Percentile-based floor is graph-size-agnostic. Validate with a 40-question spot check, not a full run.
-
-**4. WORKING node validation spot check.**
-Run 20 preference questions that failed in v0.7 and failed in v0.8-MCP. Check whether Observer is now typing those single-session preferences as WORKING (clearing the floor) or still as PREFERENCE (still getting filtered). If WORKING is working, the preference score should improve. If not, the Observer prompt needs tuning. 20 questions, not 500.
-
-### Medium-term (significant but bounded)
-
-**5. SUPERSEDES vs REFINES edge distinction.**
-"User now uses MLX instead of llama.cpp" is replacement — the old value is wrong. "User uses FastAPI with PostgreSQL" (previously just FastAPI) is elaboration — the old value is still true, it's now more specific. The graph conflates these via a single SUPERSEDES edge type. Adding REFINES allows the answerer to distinguish "this supersedes that" from "this elaborates on that". Relevant for knowledge-update and multi-session questions where the distinction matters.
-
-**6. `dory explain <node_id>` CLI command.**
-When a supersession fires and a node gets archived, there's currently no way to inspect the provenance chain without querying the database directly. `dory explain` would surface: what was this node, why was it archived, what superseded it, what evidence triggered the supersession, and what the current authoritative value is. This isn't a benchmark feature — it's a trust feature. Developers need to be able to verify that the graph is doing what they think it's doing.
-
-### Architecture (the real work)
-
-**7. Unified retrieval path.**
-Remove `_route_query()`, `_temporal_context()`, `_preference_context()`, `_hybrid_context()`, `_aggregation_context()`, `_procedure_context()`. Replace with a single path:
+**Unified retrieval path.** `_route_query()`, `_temporal_context()`, `_preference_context()`, `_hybrid_context()`, `_aggregation_context()`, and `_procedure_context()` are all gone. Replaced with a single `_serialize_structured()` function and a `query()` that calls it:
 
 ```python
-async def query(self, text: str, reference_date: str = "") -> str:
-    seeds = await self._find_seeds(text)
-    activated = self.activation.spread(seeds, max_nodes=50)
-    context = self.serialize_structured(activated, reference_date=reference_date)
-    return context  # let the LLM reason about it
+def query(topic: str, graph: Graph, reference_date: str = "") -> str:
+    seeds = act.find_seeds(topic, graph)
+    activated = act.spread(seeds[:8], graph)
+    graph._recompute_salience()
+    return _serialize_structured(activated, graph, max_nodes=50, reference_date=reference_date)
 ```
 
-`serialize_structured()` produces a self-describing context: events in chronological order, SUPERSEDES chains annotated with `[SUPERSEDED]` / `[CURRENT VALUE]` markers, PREFERENCE nodes grouped and labeled, SESSION_SUMMARY nodes with their counts. The context is interpretable without preprocessing. The LLM reasons directly about the structure.
+`_serialize_structured()` groups nodes by structural role and renders them with inline annotations:
 
-This is the path to breaking 85%. It's also a significant refactor — maybe 400 lines of code deleted, 150 written. The routing tree and all its heuristics become dead code.
+```
+## Current Values
+- [CONCEPT [CURRENT VALUE]] User now uses PostgreSQL
 
-Expected cost: a full 500q run after implementing, ~$30. Expected result: 87-90%. Possible 90%+. That's the v1.0 benchmark claim.
+## Knowledge Updates
+  [KNOWLEDGE UPDATE (2023-10-14)] Previously: User uses SQLite → Now: User uses PostgreSQL
+
+## Preferences
+- [PREFERENCE] User prefers morning workouts
+
+## Events (chronological)
+- [EVENT] (2023-08-01) Started marathon training
+
+## Session Summaries (most recent first)
+[2023-10-14]
+  Discussed database migration and running progress.
+  Counts: long runs: 8, therapy sessions: 4
+
+## Context
+- [ENTITY] AllergyFind
+```
+
+The LLM sees the structure directly. It doesn't need preprocessing to know which section to look at for a counting question (Session Summaries → Counts), a preference question (Preferences), a temporal question (Events, chronological), or a current-value question (Current Values + Knowledge Updates). The routing layer was compensating for a context that didn't surface its own structure. Now it does.
+
+**REFINES edge type.** New `EdgeType.REFINES` distinct from `SUPERSEDES`. The old node remains active — the old value is still true. A REFINES edge means the new node adds specificity: "uses FastAPI with PostgreSQL" REFINES "uses FastAPI." The implicit supersession detector now distinguishes: numeric value conflicts still produce SUPERSEDES + archive; non-numeric elaborations (where new content contains most of the old content's words and is longer) produce REFINES without archiving. The elaboration is rendered in context under `## Elaborations` as `[ELABORATION] base → more specifically: specific`.
+
+**`dory explain <node_id>`** CLI command. Shows full provenance for any node: content, salience, signal strength, archival date, what it superseded (outgoing SUPERSEDES), what superseded it (incoming SUPERSEDES), what it refines (outgoing REFINES), what refines it (incoming REFINES), and the current authoritative value (following the supersession chain forward). Accepts node ID or content substring. When content matches multiple nodes, lists candidates with IDs for disambiguation. This is a trust feature, not a benchmark feature — it's how you verify the graph is doing what you think it's doing.
+
+**MCP visualization fix.** `dory_visualize` MCP tool now passes `allow_remote_js=True`. D3.js loads from d3js.org. The interactive force-directed graph works in the browser. This was broken in v0.8.0 (shipped as v0.8.1 to PyPI).
+
+---
+
+## What Remains
+
+**Single-session-assistant extraction audit.** The -12.5pp regression vs v0.7 on this category is the only unexplained open issue. Pull the 11 failing conversations, run Haiku and Sonnet extraction on them, compare assistant-turn extraction side by side. If Sonnet is abstracting where Haiku preserves verbatim content, the fix is a one-line addition to the Observer prompt for assistant turns. No full benchmark run needed to validate — just the 11 questions.
+
+**WORKING node validation.** Observer now types nodes as WORKING when relevant. Whether it does so correctly for single-session preference questions is an extraction quality question that hasn't been validated. Run extraction on 20 known-failing preference questions and inspect the extracted node types. If WORKING isn't firing, tune the Observer prompt.
+
+**v1.0 benchmark run.** When credits recover: 500q run with the unified retrieval path. Expected 87-90% based on Mastra's results with the same architectural approach. That's the v1.0 claim.
 
 ---
 
@@ -383,12 +394,12 @@ context = mem.query(question)
 # inject context into your existing prompt
 ```
 
-The benchmark result (84.2%) is honest and reproducible. It's not the best number in the space, but it's a real number on a public benchmark with published methodology. When the unified retrieval path lands and the correct v1.0 run produces 87-90%, that becomes a competitive claim.
+The benchmark result (84.2%) is honest and reproducible. It's not the best number in the space, but it's a real number on a public benchmark with published methodology. When the v1.0 run validates the unified retrieval path at 87-90%, that becomes a competitive claim.
 
-For now: v0.8.0 is ready to ship. The architecture has a clear path forward. And the benchmarks are going to have to wait until the credits recover.
+For now: the architecture is right. The benchmarks are waiting on credits.
 
 ---
 
-*Last updated: 2026-04-07*  
-*Current version: v0.7.0 (PyPI) / v0.8.0 (main, unreleased)*  
-*Benchmark: 84.2% LongMemEval Oracle, 500 questions, Haiku judge*
+*Last updated: 2026-04-08*  
+*Current version: v0.8.1 (PyPI) / v0.9 (main, unreleased)*  
+*Benchmark: 84.2% LongMemEval Oracle, 500 questions, Haiku judge (v0.8-MCP)*

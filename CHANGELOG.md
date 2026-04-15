@@ -1,6 +1,59 @@
 # Changelog
 
-## Unreleased
+## [0.9.0] — 2026-04-15
+
+### Added
+- **REFINES edge type** — `EdgeType.REFINES` is now distinct from `SUPERSEDES`. A REFINES
+  edge means the new node elaborates an existing node without replacing it (e.g. "uses FastAPI
+  with PostgreSQL" REFINES "uses FastAPI" — both remain active). The `_is_elaboration()`
+  heuristic in Observer distinguishes numeric-conflict supersession from non-numeric elaboration.
+  Rendered in context under `## Elaborations` as `[ELABORATION] base → more specifically: specific`.
+- **`dory explain` CLI command** — surface the full provenance chain for any node: what it
+  supersedes, what supersedes it, REFINES relationships, archival metadata, and activation
+  history. Accepts a node ID or a substring match. `dory explain <node_id_or_text>`
+
+### Changed
+- **Unified retrieval path** — `_route_query()` and all five query-type-specific context
+  builders (`_temporal_context`, `_aggregation_context`, `_hybrid_context`,
+  `_procedure_context`, `_preference_context`) are removed. `query()` now calls a single
+  `_serialize_structured()` function that groups nodes by structural role (Current Values,
+  Knowledge Updates, Elaborations, Preferences, Procedures, Working, Events, Session
+  Summaries, Sessions, Context). The graph structure is self-describing — no routing
+  heuristics needed.
+- **Dead code removed** — all regex routing patterns (`_TEMPORAL_RE`, `_AGGREGATION_RE`,
+  `_HYBRID_RE`, `_PROCEDURE_RE`, `_PREFERENCE_RE`) and associated helper functions
+  (`_get_linked_summaries`, `_aggregate_counts`, `_format_summary_block`, `_dedup_similar`)
+  removed from `session.py`. ~440 lines of dead code eliminated.
+
+### Benchmark
+- Architecture change only — no new 500q run. Last measured score: **84.2%** (v0.8-MCP).
+  Unified retrieval is the architectural prerequisite for breaking the 84-85% ceiling.
+
+## [0.8.1] — 2026-04-08
+
+### Added
+- **WORKING node type** — ephemeral session-scoped facts (current tasks, in-progress
+  decisions, temporary states). Seeded at `activation_count=2` at creation, clearing
+  `SALIENCE_FLOOR` immediately. Self-archives after consolidation if not reinforced.
+  Addresses the single-session preference filtering problem for newly-extracted facts.
+- **MCP visualization now loads D3.js** — `dory_visualize` MCP tool now passes
+  `allow_remote_js=True`, enabling the full interactive force-directed graph in the
+  browser instead of the static fallback view. (Was broken in 0.8.0.)
+
+### Changed
+- **Temporal context is chronologically ordered** — `_temporal_context()` now sorts
+  EVENT nodes by `event_date` / `start_date` metadata rather than activation level.
+  "Which happened first?" questions now see events in calendar order.
+- **`flush()` renamed to `consolidate()`** — the primary method is now `consolidate()`;
+  `flush()` is retained as a backward-compatible alias. `aconsolidate()` added;
+  `aflush()` kept. The new name better describes the intent: decay, dedup, conflict
+  resolution, archive management.
+
+### Benchmark
+- LongMemEval 500q (Sonnet extraction + claude-code-mcp answering): **84.2%** (421/500)
+  — ties v0.7.0 best. Category gains: temporal-reasoning +7.5pp (82.7%), preference
+  +13.3pp (70.0%), abstention +6.6pp (73.3%). Category regressions: single-session-assistant
+  -12.5pp (80.4%, under investigation), knowledge-update -5.1pp (87.2%).
 
 ## [0.7.0] — 2026-04-05
 

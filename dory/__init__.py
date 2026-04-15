@@ -1,3 +1,5 @@
+__version__ = "0.9.0"
+
 from .graph import Graph
 from .schema import NodeType, EdgeType
 from .memory import DoryMemory

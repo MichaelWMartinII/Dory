@@ -252,6 +252,35 @@ def _extract_numeric_value(text: str) -> float | None:
     return None
 
 
+def _is_elaboration(old_content: str, new_content: str, overlap_threshold: float = 0.6) -> bool:
+    """
+    Return True if new_content elaborates on old_content rather than replacing it.
+
+    Heuristic: if a significant fraction of the old content's meaningful words appear
+    in the new content, and the new content is longer, it's likely an elaboration
+    ("uses FastAPI" → "uses FastAPI with PostgreSQL and asyncpg").
+
+    This is intentionally conservative — false negatives (missing a REFINES) are
+    preferable to false positives (wrongly not archiving a true supersession).
+    """
+    _stop = frozenset({
+        "a", "an", "the", "is", "are", "was", "were", "to", "of", "in", "on",
+        "at", "for", "with", "by", "and", "or", "not", "it", "its", "i", "my",
+    })
+
+    def _words(text: str) -> set[str]:
+        return {w.lower() for w in re.findall(r"[a-zA-Z]\w*", text) if w.lower() not in _stop and len(w) >= 3}
+
+    old_words = _words(old_content)
+    new_words = _words(new_content)
+
+    if not old_words or len(new_content) <= len(old_content):
+        return False
+
+    overlap = len(old_words & new_words) / len(old_words)
+    return overlap >= overlap_threshold
+
+
 # ---------------------------------------------------------------------------
 # Observer
 # ---------------------------------------------------------------------------
@@ -532,9 +561,14 @@ class Observer:
                 if amount:
                     node.metadata["amount"] = amount
 
-            # Implicit supersession: detect numeric value conflicts even without
-            # an explicit supersedes_hint. Catches cases like "pre-approval is $400k"
-            # following a prior "pre-approval is $350k" where no update language was used.
+            # Implicit supersession/refinement: detect conflicts or elaborations without
+            # an explicit supersedes_hint.
+            #
+            # SUPERSEDES: numeric value changes ("pre-approval is $400k" vs "$350k") —
+            #   the old value is wrong; archive it.
+            # REFINES: new content is more specific than old content but doesn't contradict
+            #   it ("uses FastAPI with PostgreSQL" vs "uses FastAPI") — old value still
+            #   valid; add a REFINES edge without archiving.
             if not supersedes_hint:
                 implicit_old = self._find_similar(content, threshold=0.45)
                 if implicit_old and implicit_old.id != node_id and implicit_old.zone == "active":
@@ -542,10 +576,14 @@ class Observer:
                     new_val = _extract_numeric_value(content)
                     if (old_val is not None and new_val is not None
                             and abs(old_val - new_val) > 1e-9):
+                        # Numeric conflict → SUPERSEDES, archive old node
                         from ..schema import ZONE_ARCHIVED, now_iso as _now_iso2
                         implicit_old.zone = ZONE_ARCHIVED
                         implicit_old.superseded_at = _now_iso2()
                         self.graph.add_edge(node_id, implicit_old.id, EdgeType.SUPERSEDES, weight=0.95)
+                    elif _is_elaboration(implicit_old.content, content):
+                        # New content adds specificity without contradiction → REFINES
+                        self.graph.add_edge(node_id, implicit_old.id, EdgeType.REFINES, weight=0.80)
 
         # Write edges
         for ed in edges_data:
