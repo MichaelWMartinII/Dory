@@ -19,6 +19,8 @@ print(mem.query("what does the user prefer for inference?"))
 
 **Current benchmark result:** 84.2% on LongMemEval (500-question oracle split) — Sonnet extraction + Claude Code MCP agentic answering. See [Benchmark results](#benchmark-results) and [Reproducing the benchmark](#reproducing-the-benchmark).
 
+**v0.9.1** — REST API server (`dory serve`), browser extension for claude.ai / ChatGPT / Gemini / Perplexity, PREFERENCE nodes always surfaced in context.
+
 ---
 
 ## The problem
@@ -137,6 +139,27 @@ For a practical repo-local workflow with tools like Codex and Claude Code, see
 
 For shared memory between Codex and Claude Code, see
 `docs/CODEX_INTEGRATION.md`.
+
+### REST API + browser extension
+
+Run Dory as a local HTTP server and use it from any browser-based AI chat:
+
+```bash
+pip install 'dory-memory[serve]'
+dory serve                  # starts on http://127.0.0.1:7341
+dory serve --port 8080      # custom port
+dory serve --db ~/my.db     # custom database
+```
+
+Endpoints: `GET /health` · `GET /query?topic=...` · `POST /observe` · `POST /ingest` · `GET /stats` · `GET /nodes`
+
+**Browser extension** — persistent memory sidebar for claude.ai, chatgpt.com, gemini.google.com, and perplexity.ai:
+
+1. Start `dory serve`
+2. In Chrome: `chrome://extensions` → "Load unpacked" → select `Dory/browser-extension/`
+3. Open any supported chat site — the Dory panel slides in from the right
+
+The panel queries your memory graph on page load, re-queries after each AI response, and auto-extracts memories from every conversation turn in the background. `Cmd+Shift+M` toggles the panel.
 
 **Claude Desktop** — add to `claude_desktop_config.json`:
 ```json
@@ -309,6 +332,7 @@ dory/
 ├── memory.py         ← DoryMemory — high-level API (sync + async)
 ├── visualize.py      ← D3.js interactive graph visualization
 ├── mcp_server.py     ← MCP tools (dory_query, dory_observe, dory_consolidate, …)
+├── rest_server.py    ← FastAPI REST server (dory serve, localhost:7341)
 ├── store.py          ← SQLite backend (nodes, edges, FTS5, observations)
 │
 ├── pipeline/
@@ -325,6 +349,17 @@ dory/
 │
 └── export/
     └── jsonld.py      ← JSON-LD round-trip export/import
+
+browser-extension/         ← Manifest V3 Chrome extension (memory sidebar)
+├── manifest.json
+├── background.js          ← service worker, all API calls to localhost
+├── content/               ← site-specific content scripts
+│   ├── base.js            ← sidebar DOM + shared logic
+│   ├── claude.js          ← claude.ai
+│   ├── chatgpt.js         ← chatgpt.com
+│   ├── gemini.js          ← gemini.google.com
+│   └── perplexity.js      ← perplexity.ai
+└── sidebar/sidebar.css    ← panel styles
 ```
 
 ---
@@ -428,6 +463,9 @@ Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% re
 | v0.6 | Haiku | Claude Code (MCP) | 500 | 84.0% |
 | v0.7 | Haiku | Claude Code (MCP) | 500 | 84.2% |
 | **v0.8** | **Sonnet** | **Claude Code (MCP)** | **500** | **84.2%** |
+| v0.9.1 | Haiku | Claude Code (MCP) | 50† | 84.0% |
+
+†50-question stratified spot check — not directly comparable to 500q full runs. Variance ±2pp.
 
 Category breakdown for the current best run (v0.8, Sonnet extract + MCP answer):
 
@@ -513,10 +551,10 @@ Benchmark caveats:
 
 ## Current priorities
 
-- **Unified retrieval path** — replace regex-based query routing with a single spreading activation → top-k → LLM reasoning step. Graph structure becomes self-describing; no code-path branching per query type. Expected to break the 84–85% ceiling.
-- **Relative salience floor** — replace the absolute `SALIENCE_FLOOR = 0.1` with a percentile-based filter (bottom 15% pruned). Graph-size-agnostic, no manual tuning.
-- **SUPERSEDES vs REFINES edges** — distinguish replacement ("now uses X instead of Y") from elaboration ("now uses X with Z added"). Improves knowledge-update accuracy.
-- **`dory explain <node_id>`** — CLI command to surface why a node was archived, what superseded it, and the evidence chain.
+- **Observer extraction quality** — Haiku misses specific media titles, named events, and implicit preferences. Prompt tuning to preserve exact entities as PREFERENCE/EVENT nodes is the highest-leverage improvement available. Expected to directly unblock the 84–85% benchmark ceiling.
+- **True forgetting** — nodes move active → archived → expired but are never deleted. Add hard deletion after N consolidation cycles in the expired zone. Tighten decay λ from 0.05 → 0.08 for non-core nodes (~9-day half-life vs current ~14-day).
+- **Privacy layer** — `privacy_level` field on Node (`default` / `private` / `sensitive`), `dory forget <query>` for immediate deletion, `dory export` for portability.
+- **launchd service** — template plist to run `dory serve` as a macOS background service so the browser extension works without manual startup.
 
 ---
 
