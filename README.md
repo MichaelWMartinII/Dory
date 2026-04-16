@@ -40,7 +40,7 @@ The deeper problem: naive context injection makes things *worse*. Research ([Chr
 | Procedural | Skills, workflows, repeatable processes | ✓ |
 | Working | Ephemeral session-scoped facts; auto-archived after consolidation | ✓ |
 
-**Spreading activation retrieval** — relevant memories can pull in connected memories through the graph. "AllergyFind" activates "Giovanni's" activates "FastAPI" activates "menu endpoint" because those things co-occurred.
+**Spreading activation retrieval** — relevant memories can pull in connected memories through the graph. "payments API" activates "Stripe" activates "webhook handler" activates "retry logic" because those things co-occurred.
 
 **Cacheable prefix output** — Dory splits output into a *stable prefix* (unchanged until memory changes, enabling prompt cache hits) and a *dynamic suffix* (query-specific). This is designed to reduce prompt churn and make repeated agent calls cheaper.
 
@@ -60,12 +60,12 @@ from dory import DoryMemory
 mem = DoryMemory()
 
 # Add memories manually
-mem.observe("Alice is migrating payments from Stripe to a custom processor", node_type="EVENT")
-mem.observe("Alice prefers async Python over synchronous frameworks", node_type="PREFERENCE")
+mem.observe("User is migrating the auth system from JWT to OAuth2", node_type="EVENT")
+mem.observe("User prefers async Python over synchronous frameworks", node_type="PREFERENCE")
 mem.observe("The migration deadline is end of Q2", node_type="EVENT")
 
 # Query — returns context to inject into your LLM prompt
-context = mem.query("payment migration deadline")
+context = mem.query("auth migration deadline")
 print(context)
 
 # End of session: consolidate, decay, promote core memories
@@ -104,11 +104,11 @@ mem = DoryMemory(                                           # GPT / Grok / any c
 )
 
 # Log turns — extraction happens automatically every N turns
-mem.add_turn("user", "I'm working on AllergyFind today, need to add a menu endpoint")
-mem.add_turn("assistant", "What authentication approach are you using?")
+mem.add_turn("user", "I need to add rate limiting to the API today")
+mem.add_turn("assistant", "What backend are you using?")
 
 # Build API-ready messages with prompt caching
-result = mem.build_context("menu endpoint authentication")
+result = mem.build_context("rate limiting API")
 messages = result.as_anthropic_messages(user_query)   # Anthropic SDK w/ cache_control
 messages = result.as_openai_messages(user_query)      # OpenAI / compat
 ```
@@ -423,17 +423,17 @@ Q1 · Supersession — "What was the inference backend before MLX replaced it?"
   ✗ Flat search: returns both nodes with equal score. No directionality. No timestamp.
 
 ──────────────────────────────────────────────────────────────────────
-Q4 · Semantic Path — "How does local-first philosophy connect to the 80.6% result?"
+Q4 · Semantic Path — "How does the local-first preference connect to the model choice?"
 
   ● [CONCEPT]    Local-first AI — data stays on device, no cloud
     └─[CO_OCCURS]──▶
   ● [PREFERENCE] Prefers local-first — no data leaves device unless necessary
     └─[PREFERS]──▶
-  ● [ENTITY]     Developer — solo, Apple Silicon
+  ● [ENTITY]     Developer
     └─[WORKS_ON]──▶
-  ● [ENTITY]     Dory — agent memory library
+  ● [ENTITY]     Agent project
     └─[CO_OCCURS]──▶
-  ● [EVENT]      [2026-04-07] v0.8 full benchmark — 84.2% LongMemEval
+  ● [EVENT]      [2026-03-01] Switched inference backend to local Ollama instance
 
   ✗ Flat search: returns both endpoints as separate results. No connecting path.
 ```
