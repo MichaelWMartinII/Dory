@@ -450,6 +450,22 @@ def cmd_consolidate(args, graph: Graph) -> None:
     print(f"  Supersessions:     {result['supersessions']}")
 
 
+def _cmd_serve(args, graph_path: Path) -> None:
+    try:
+        import uvicorn
+        from dory.rest_server import create_app
+    except ImportError:
+        print("REST server requires: pip install dory-memory[serve]")
+        sys.exit(1)
+
+    os.environ.setdefault("DORY_DB_PATH", str(graph_path))
+    app = create_app()
+    print(f"Dory REST server starting on http://{args.host}:{args.port}")
+    print(f"Database: {graph_path}")
+    print("Endpoints: GET /health  GET /query  POST /observe  POST /ingest  GET /stats  GET /nodes")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Dory — graph memory CLI for AI agent sessions"
@@ -500,6 +516,11 @@ def main() -> None:
     p_viz.add_argument("--no-open",  action="store_true", help="Save the file but don't open the browser")
     p_viz.add_argument("--remote-assets", action="store_true", help="Allow remote D3.js for the fully interactive graph view")
 
+    # serve
+    p_serve = sub.add_parser("serve", help="Start the Dory REST API server (for browser extension and HTTP clients)")
+    p_serve.add_argument("--port", type=int, default=7341, help="Port to listen on (default: 7341)")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
+
     # consolidate
     p_cons = sub.add_parser("consolidate", help="Run end-of-session consolidation")
     p_cons.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
@@ -549,6 +570,10 @@ def main() -> None:
     env_graph = os.getenv("DORY_DB_PATH")
     graph_path = Path(args.graph) if args.graph else Path(env_graph) if env_graph else DEFAULT_GRAPH_PATH
     graph = Graph(path=graph_path)
+
+    if args.command == "serve":
+        _cmd_serve(args, graph_path)
+        return
 
     dispatch = {
         "query": cmd_query,

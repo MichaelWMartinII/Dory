@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dory-memory"
-version = "0.9.0"
+version = "0.9.1"
 description = "Agent memory with graph-based spreading activation retrieval and principled forgetting. 84.2% on LongMemEval."
 readme = "README.md"
 license = "Apache-2.0"
@@ -29,9 +29,10 @@ vector = ["sqlite-vec>=0.1.6"]
 anthropic = ["anthropic>=0.40.0"]
 openai = ["httpx>=0.27.0"]
 mcp = ["mcp>=1.0.0"]
+serve = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
 langchain = ["langchain>=0.2.0"]
 langgraph = ["langgraph>=0.2.0"]
-full = ["ollama>=0.6.0", "sqlite-vec>=0.1.6", "anthropic>=0.40.0", "httpx>=0.27.0", "mcp>=1.0.0", "langchain>=0.2.0", "langgraph>=0.2.0"]
+full = ["ollama>=0.6.0", "sqlite-vec>=0.1.6", "anthropic>=0.40.0", "httpx>=0.27.0", "mcp>=1.0.0", "fastapi>=0.100.0", "uvicorn>=0.20.0", "langchain>=0.2.0", "langgraph>=0.2.0"]
 dev = ["pytest>=8.0", "pytest-cov"]
 
 [project.scripts]

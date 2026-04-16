@@ -282,6 +282,31 @@ def _is_elaboration(old_content: str, new_content: str, overlap_threshold: float
 
 
 # ---------------------------------------------------------------------------
+# Low-information turn filter
+# ---------------------------------------------------------------------------
+
+_LOW_INFO_EXACT = frozenset({
+    "ok", "okay", "k", "kk", "yep", "yup", "yeah", "yes", "no", "nope",
+    "sure", "thanks", "thank you", "ty", "thx", "np", "no problem",
+    "got it", "got it thanks", "sounds good", "sounds great", "great",
+    "perfect", "alright", "cool", "nice", "awesome", "lol", "haha",
+    "understood", "noted", "will do", "done", "good", "fine",
+})
+
+
+def _is_low_info(text: str) -> bool:
+    """Return True if the turn carries no extractable information."""
+    stripped = text.strip().rstrip(".,!?").lower()
+    if stripped in _LOW_INFO_EXACT:
+        return True
+    words = stripped.split()
+    # Very short turns with no proper nouns are likely filler
+    if len(words) <= 4 and all(w in _LOW_INFO_EXACT for w in words):
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Observer
 # ---------------------------------------------------------------------------
 
@@ -364,8 +389,10 @@ class Observer:
             role=role,
             created_at=now_iso(),
         )
-        self._buffer.append({"role": role, "content": content})
         self._stats["turns_logged"] += 1
+        if _is_low_info(content):
+            return  # log to episodic store but skip extraction buffer
+        self._buffer.append({"role": role, "content": content})
 
         if len(self._buffer) >= self.threshold:
             # Snapshot and clear the buffer immediately so add_turn() returns fast.

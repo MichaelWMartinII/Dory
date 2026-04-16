@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Dory Memory — Options</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: #1a1a2e; color: #e0e0e0; padding: 24px; max-width: 400px; }
+    h1 { color: #a8d8ea; font-size: 18px; margin: 0 0 20px; }
+    label { display: block; margin-bottom: 6px; font-size: 13px; color: #aaa; }
+    input, select { width: 100%; background: #0f3460; border: 1px solid #1a4a8a;
+                    color: #e0e0e0; border-radius: 6px; padding: 8px 10px;
+                    font-size: 14px; box-sizing: border-box; margin-bottom: 16px; }
+    button { background: #a8d8ea; color: #1a1a2e; border: none; border-radius: 6px;
+             padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #c8f0fa; }
+    #status { margin-top: 12px; font-size: 12px; color: #6bcb77; min-height: 18px; }
+    .section { margin-bottom: 20px; }
+    .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .toggle-row input[type=checkbox] { width: auto; margin: 0; }
+    .toggle-row label { margin: 0; }
+  </style>
+</head>
+<body>
+  <h1>🐟 Dory Memory Settings</h1>
+
+  <div class="section">
+    <label for="serverPort">Local server port</label>
+    <input type="number" id="serverPort" value="7341" min="1024" max="65535">
+  </div>
+
+  <div class="section">
+    <div class="toggle-row">
+      <input type="checkbox" id="autoExtract" checked>
+      <label for="autoExtract">Auto-extract memories after each AI response</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="autoShow" checked>
+      <label for="autoShow">Show panel automatically on page load</label>
+    </div>
+  </div>
+
+  <button id="save">Save</button>
+  <div id="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

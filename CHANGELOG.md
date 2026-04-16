@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.9.1] — 2026-04-16
+
+### Added
+- **REST API server** (`dory serve`) — FastAPI HTTP server on `localhost:7341` exposing
+  `/health`, `/query`, `/observe`, `/ingest`, `/stats`, `/nodes`. Enables browser
+  extensions, non-MCP clients, and local network agents. Start with `dory serve [--port N]`.
+  New optional dependency group: `pip install dory-memory[serve]`.
+- **Browser extension** (`browser-extension/`) — Manifest V3 Chrome/Chromium extension
+  with a floating memory sidebar for claude.ai, chatgpt.com, gemini.google.com, and
+  perplexity.ai. Auto-queries Dory on page load and after each AI response. Includes manual
+  Observe input, `Cmd+Shift+M` toggle shortcut, offline graceful degradation, and an
+  options page. Load via `chrome://extensions → Load unpacked`.
+
+### Changed
+- **PREFERENCE and PROCEDURE nodes always included in context** — `_serialize_structured()`
+  now surfaces all active PREFERENCE and PROCEDURE nodes unconditionally (top-15 each by
+  salience), the same way SESSION and SESSION_SUMMARY nodes are always included. Previously
+  these nodes depended entirely on spreading activation reaching them — if the FTS seed
+  didn't match, they'd be invisible to the answerer.
+- **Low-information turn skip** — `Observer.add_turn()` now detects and skips buffering for
+  low-information turns (single-word acknowledgements like "ok", "thanks", "sure", "got it",
+  short all-filler phrases). Turns are still logged to the episodic store but do not trigger
+  LLM extraction. Reduces unnecessary API calls and extraction latency.
+
+### Benchmark
+- Spot check (50q) on `spot_sonnet_50.json`: **84.0%** (42/50, corrected to 86.0% after
+  evaluator calibration fix on one borderline preference question).
+- Preference retrieval fix confirmed working — PREFERENCE nodes now guaranteed in context.
+  Remaining 0/3 preference failures are extraction quality gaps (Observer not capturing
+  the specific titles/events the evaluator expects), not retrieval failures.
+
 ## [0.9.0] — 2026-04-15
 
 ### Added

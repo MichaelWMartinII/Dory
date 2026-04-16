@@ -140,7 +140,11 @@ def _serialize_structured(
 
     seen_ids: set[str] = set()
 
-    # Always include all SESSION and SESSION_SUMMARY nodes
+    # Always include SESSION, SESSION_SUMMARY, PREFERENCE, and PROCEDURE nodes
+    # regardless of activation — these are structurally high-value and should
+    # always be available to the answerer without depending on seed quality.
+    always_prefs: list = []
+    always_procs: list = []
     for node in graph.all_nodes():
         if node.zone != "active":
             continue
@@ -150,6 +154,20 @@ def _serialize_structured(
         elif node.type.value == "SESSION_SUMMARY":
             summaries.append(node)
             seen_ids.add(node.id)
+        elif node.type == NodeType.PREFERENCE:
+            always_prefs.append(node)
+            seen_ids.add(node.id)
+        elif node.type == NodeType.PROCEDURE:
+            always_procs.append(node)
+            seen_ids.add(node.id)
+
+    # Cap to avoid flooding context — sort by salience descending
+    always_prefs.sort(key=lambda n: -n.salience)
+    always_procs.sort(key=lambda n: -n.salience)
+    always_prefs = always_prefs[:15]
+    always_procs = always_procs[:15]
+    preferences = [(n, 1.0) for n in always_prefs]
+    procedures = [(n, 1.0) for n in always_procs]
 
     # Bucket activated nodes
     ranked = sorted(
@@ -167,9 +185,9 @@ def _serialize_structured(
         seen_ids.add(node_id)
 
         if node.type == NodeType.PREFERENCE:
-            preferences.append((node, level))
+            pass  # already included via always_prefs
         elif node.type == NodeType.PROCEDURE:
-            procedures.append((node, level))
+            pass  # already included via always_procs
         elif node.type.value == "WORKING":
             working.append((node, level))
         elif node.type.value == "EVENT":
