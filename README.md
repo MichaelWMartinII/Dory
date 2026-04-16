@@ -394,17 +394,16 @@ Memory is never deleted — only decayed. Archived and expired nodes retain full
 
 ## Feature snapshot
 
-This table is meant to orient readers around design choices, not claim a universal ranking.
-
-| | mem0 | Zep | Letta | Mastra | **Dory** |
-|---|---|---|---|---|---|
-| Principled forgetting | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Spreading activation retrieval | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Cacheable prefix output | ✗ | ✗ | ✗ | ✓ (TS only) | ✓ |
-| Bi-temporal conflict resolution | ✗ | ✓ | ✗ | ✗ | ✓ |
-| Zero-server local stack | partial | ✗ | partial | ✗ | ✓ |
-| Drop-in Python library | ✓ | partial | ✗ | ✗ | ✓ |
-| Apache 2.0 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Feature | Dory |
+|---|---|
+| Principled forgetting (decay + true deletion) | ✓ |
+| Spreading activation retrieval | ✓ |
+| Cacheable prefix output | ✓ |
+| Bi-temporal conflict resolution | ✓ |
+| Zero-server local stack (SQLite) | ✓ |
+| Drop-in Python library | ✓ |
+| REST API + browser extension | ✓ |
+| Apache 2.0 | ✓ |
 
 ---
 
@@ -488,10 +487,6 @@ Artifacts and writeups:
 - [`benchmarks/predictions_v08_sonnet_mcp_full.eval.jsonl`](benchmarks/predictions_v08_sonnet_mcp_full.eval.jsonl)
 - [`benchmarks/README.md`](benchmarks/README.md)
 
-Published scores for reference: Mem0 68.4%, Zep 71.2%, Mastra 94.87%¹.
-
-¹ Mastra uses GPT-4o-mini on TypeScript. Architecturally different stacks — not directly comparable.
-
 **Note:** LongMemEval oracle split uses pre-filtered context (~15K tokens per question). Performance with live, unfiltered conversations will differ.
 
 ## Reproducing the benchmark
@@ -560,10 +555,6 @@ Benchmark caveats:
 
 ## Research basis
 
-- [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560) — two-tier memory architecture
-- [Zep: A Temporal Knowledge Graph Architecture](https://arxiv.org/abs/2501.13956) — bi-temporal provenance
-- [MAGMA: Multi-Graph based Agentic Memory](https://arxiv.org/abs/2601.03236) — multi-graph retrieval
-- [Mastra Observational Memory](https://mastra.ai/research/observational-memory) — cacheable prefix architecture
 - [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) — evaluation benchmark
 - Collins & Loftus (1975) — spreading activation in semantic memory
 - Hebb (1949) — neurons that fire together wire together
