@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dory Memory",
-  "version": "0.9.1",
+  "version": "0.9.3",
   "description": "Persistent memory panel for browser-based AI chats. Connects to your local Dory instance.",
   "permissions": [
     "storage",

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.3] — 2026-04-16
+
+### Changed
+- Updated demo GIF and added demo MP4 (`docs/demo.mp4`) showing Dory progression from early prototype to v0.9
+
 ## [0.9.2] — 2026-04-16
 
 ### Changed
