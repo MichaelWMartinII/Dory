@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.2] — 2026-04-16
+
+### Changed
+- README cleanup: removed competitor comparisons, genericized code examples
+
 ## [0.9.1] — 2026-04-16
 
 ### Added
