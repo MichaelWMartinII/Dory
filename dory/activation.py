@@ -159,7 +159,29 @@ def spread(
     return {nid: v for nid, v in activation.items() if v >= threshold}
 
 
-SALIENCE_FLOOR: float = 0.1  # nodes below this are skipped during serialization
+SALIENCE_FLOOR: float = 0.1  # fallback minimum for graphs with < MIN_NODES_FOR_PERCENTILE nodes
+
+_MIN_NODES_FOR_PERCENTILE = 20  # below this, fall back to the static floor
+
+
+def dynamic_salience_floor(graph: Graph, percentile: int = 15) -> float:
+    """Return the Nth-percentile salience across active nodes, or SALIENCE_FLOOR on small graphs.
+
+    As the graph grows and saliences compress toward lower values, a fixed absolute
+    floor (0.1) would either pass too much noise or prune too aggressively. Using the
+    Nth percentile means 'always show the top (100-N)% of active nodes' regardless
+    of graph size or age.
+    """
+    saliences = [
+        n.salience
+        for n in graph.all_nodes()
+        if n.zone == ZONE_ACTIVE
+    ]
+    if len(saliences) < _MIN_NODES_FOR_PERCENTILE:
+        return SALIENCE_FLOOR
+    saliences.sort()
+    idx = max(0, int(len(saliences) * percentile / 100) - 1)
+    return max(SALIENCE_FLOOR, saliences[idx])
 
 
 def _compute_duration_hint(start_date_iso: str, reference_date: str) -> str:
@@ -218,6 +240,9 @@ def serialize(
         reverse=True,
     )[:max_nodes]
 
+    # Compute salience floor once for this call (adapts to graph size/age)
+    _floor_cache = dynamic_salience_floor(graph)
+
     # Pre-compute which nodes have outgoing SUPERSEDES edges (they are canonical current values)
     superseding_ids: set[str] = set()
     for edge in graph.all_edges():
@@ -230,7 +255,8 @@ def serialize(
         if not node or node.zone != ZONE_ACTIVE:
             continue
         # Skip low-salience nodes to reduce noise (only after first save cycle)
-        if node.activation_count > 0 and node.salience < SALIENCE_FLOOR:
+        floor = _floor_cache
+        if node.activation_count > 0 and node.salience < floor:
             continue
         core_marker = " [CORE]" if node.is_core else ""
         current_marker = " [CURRENT VALUE]" if node_id in superseding_ids else ""

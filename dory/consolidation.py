@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .graph import Graph
-from .schema import now_iso
+from .schema import now_iso, ZONE_ACTIVE
+
+
+def _percentile_salience(graph: Graph, pct: float) -> float | None:
+    """Return the Nth-percentile salience across active nodes, or None if too few nodes."""
+    saliences = sorted(n.salience for n in graph.all_nodes() if n.zone == ZONE_ACTIVE)
+    if len(saliences) < 10:
+        return None
+    idx = max(0, int(len(saliences) * pct / 100) - 1)
+    return saliences[idx]
 
 
 def _days_since(iso_timestamp: str) -> float:
@@ -42,20 +51,33 @@ def prune(graph: Graph, min_weight: float = 0.05) -> int:
 
 
 def promote_core(graph: Graph, threshold: float = 0.65) -> list[str]:
-    """Flag high-salience nodes as core memories."""
+    """Flag high-salience nodes as core memories.
+
+    Uses the 80th-percentile salience as the promotion threshold when the graph
+    has enough nodes, falling back to the static threshold for small graphs.
+    The top 20% of active nodes are always candidates for core status, regardless
+    of how the absolute salience distribution shifts as the graph ages.
+    """
+    effective = _percentile_salience(graph, 80) or threshold
     promoted = []
     for node in graph.all_nodes():
-        if not node.is_core and node.salience >= threshold:
+        if not node.is_core and node.salience >= effective:
             node.is_core = True
             promoted.append(node.id)
     return promoted
 
 
 def demote_core(graph: Graph, threshold: float = 0.25) -> list[str]:
-    """Remove core flag from nodes whose salience has fallen."""
+    """Remove core flag from nodes whose salience has fallen.
+
+    Uses the 25th-percentile salience as the demotion threshold when the graph
+    has enough nodes, so roughly the bottom quarter can lose core status after
+    consolidation, regardless of absolute salience scale.
+    """
+    effective = _percentile_salience(graph, 25) or threshold
     demoted = []
     for node in graph.all_nodes():
-        if node.is_core and node.salience < threshold:
+        if node.is_core and node.salience < effective:
             node.is_core = False
             demoted.append(node.id)
     return demoted
