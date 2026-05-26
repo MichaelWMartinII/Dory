@@ -142,7 +142,7 @@ class Prefixer:
     graph : Graph
         The Engram graph to read from.
     db_path : Path | None
-        Path to engram.db. Defaults to graph.path.
+        Path to dory.db. Defaults to graph.path.
     max_prefix_tokens : int
         Approximate token budget for the stable prefix. Default 800.
     max_suffix_tokens : int

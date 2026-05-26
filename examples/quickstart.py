@@ -11,7 +11,7 @@ To add auto-extraction from conversation turns, swap in:
 
 from dory import DoryMemory
 
-# Create memory (defaults to ./engram.db)
+# Create memory (defaults to ./dory.db)
 mem = DoryMemory()
 
 # Add some memories manually

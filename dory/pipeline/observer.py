@@ -319,7 +319,7 @@ class Observer:
     graph : Graph
         The Engram graph to write extracted nodes/edges into.
     db_path : Path
-        Path to the engram.db SQLite file (for observation logging).
+        Path to the dory.db SQLite file (for observation logging).
     model : str
         Ollama model name or OpenAI-compat model name.
     backend : str

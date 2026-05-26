@@ -11,7 +11,7 @@ from pathlib import Path
 # Each thread gets its own connection per db path, kept open for the thread's lifetime.
 _thread_local = threading.local()
 
-DEFAULT_GRAPH_PATH = Path.home() / ".dory" / "engram.db"
+DEFAULT_GRAPH_PATH = Path.home() / ".dory" / "dory.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (

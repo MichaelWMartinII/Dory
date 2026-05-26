@@ -4,7 +4,7 @@ Dory REST Server — HTTP API for browser extensions and non-MCP clients.
 Runs on localhost:7341 by default. Wraps the same session.query/observe
 functions used by the MCP server.
 
-Start with: dory serve [--port 7341] [--db ~/.dory/engram.db]
+Start with: dory serve [--port 7341] [--db ~/.dory/dory.db]
 """
 
 from __future__ import annotations

@@ -14,3 +14,6 @@ venv/
 .env
 *.log
 .dory/
+Screenshot*
+docs/Screen*
+docs/demo_v3.html

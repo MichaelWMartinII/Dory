@@ -51,7 +51,7 @@ class DoryMemory:
     Parameters
     ----------
     db_path : str | Path | None
-        Path to the SQLite memory file. Defaults to ./engram.db.
+        Path to the SQLite memory file. Defaults to ./dory.db.
     extract_model : str | None
         Model name for auto-extraction from conversation turns.
         None disables auto-extraction (manual observe() only).

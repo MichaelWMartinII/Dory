@@ -472,7 +472,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--graph",
-        help="Path to SQLite graph file (default: $DORY_DB_PATH or ~/.dory/engram.db)",
+        help="Path to SQLite graph file (default: $DORY_DB_PATH or ~/.dory/dory.db)",
         default=None,
     )
     sub = parser.add_subparsers(dest="command", required=True)

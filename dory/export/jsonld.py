@@ -9,7 +9,7 @@ Usage:
     from dory.graph import Graph
     from dory.export.jsonld import JSONLDExporter
 
-    graph = Graph("engram.db")
+    graph = Graph("dory.db")
     exporter = JSONLDExporter(graph)
 
     # Export to file

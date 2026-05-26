@@ -6,10 +6,10 @@ Exposes Dory memory tools (query, observe, consolidate, stats) to any
 MCP-compatible AI client such as Claude Desktop or Claude Code.
 
 Usage:
-  python dory_mcp.py [--db /path/to/engram.db]
+  python dory_mcp.py [--db /path/to/dory.db]
 
   # Or set the database path via environment variable:
-  DORY_DB_PATH=/path/to/engram.db python dory_mcp.py
+  DORY_DB_PATH=/path/to/dory.db python dory_mcp.py
 
 Configure in Claude Desktop
 (~/Library/Application Support/Claude/claude_desktop_config.json):
@@ -18,14 +18,14 @@ Configure in Claude Desktop
     "mcpServers": {
       "dory": {
         "command": "dory-mcp",
-        "args": ["--db", "/path/to/your/engram.db"]
+        "args": ["--db", "/path/to/your/dory.db"]
       }
     }
   }
 
 Configure in Claude Code:
 
-  claude mcp add dory -- dory-mcp --db /path/to/your/engram.db
+  claude mcp add dory -- dory-mcp --db /path/to/your/dory.db
 
 After pip install dory-memory[mcp], the `dory-mcp` script is available on PATH.
 """
