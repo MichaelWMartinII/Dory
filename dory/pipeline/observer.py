@@ -101,6 +101,13 @@ Rules:
   WRONG: "User likes comedy" — RIGHT: "User prefers Netflix stand-up comedy specials with strong storytelling"
   WRONG: "User enjoys podcasts" — RIGHT: "User prefers history podcasts (Hardcore History, Lore, The Dollop) during commute"
   WRONG: "User has bedtime habits" — RIGHT: "User avoids phone use after 9:30 PM as part of wind-down routine"
+- Indexed list items: when the assistant provided a numbered list, capture specific
+  items by exact position. Do not collapse the category.
+  WRONG: "Assistant discussed media production parameters" — RIGHT: "Parameter 27 in assistant's 100-parameter list was 'Sound effects (ambient, diegetic, non-diegetic)'"
+- Physical/visual descriptions of named entities: capture these exactly.
+  WRONG: "Andy's appearance described" — RIGHT: "In the screenplay, Andy wore an untidy, stained white shirt"
+- Precise assistant outputs the user may later quote back: specific moves in a game,
+  exact measurements, exact code, song note sequences. Capture verbatim, not summarized.
 - Return {"nodes": [], "edges": []} if nothing meaningful to extract"""
 
 _USER_TEMPLATE = """Extract memories from this conversation:
