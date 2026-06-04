@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.0.0] — 2026-06-04
+
+### Benchmark
+- **84.8% LongMemEval Oracle (424/500)** — all-time best, with Opus 4.8 extraction and answering
+- Previous ceiling (v0.7–v0.9): 84.2% across six runs
+- Temporal-reasoning: **90.2%** (+7.5pp vs v0.8)
+- Single-session-assistant: **89.3%** (+8.9pp vs v0.8)
+- Multi-session: 80.5% (+11.9pp vs v0.9.3 Haiku run; -3pp vs v0.8-MCP)
+
+### Added
+- **Supplementary FTS sweep in `query()`** — after spreading activation, a direct FTS
+  search merges any active nodes matching the query that activation didn't reach.
+  Catches low-salience nodes from older sessions for multi-session counting questions.
+  `max_nodes` bumped 50→60. (`dory/session.py`)
+
+### Fixed
+- **Verbatim extraction from assistant turns** — Observer prompt now explicitly instructs
+  extraction of indexed list items by exact position, physical/visual descriptions of named
+  entities, and precise assistant outputs (moves, measurements, sequences) that a user may
+  later quote back. Addresses the single-session-assistant regression identified in the
+  v0.8-MCP audit. (`dory/pipeline/observer.py`)
+
 ## [0.9.3] — 2026-04-16
 
 ### Changed

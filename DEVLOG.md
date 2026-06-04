@@ -3,6 +3,57 @@
 
 ---
 
+## v1.0 — 84.8% on LongMemEval Oracle
+
+**The number:** 424/500 = 84.8%. Previous best: 84.2% (v0.7 and v0.8, three runs). Six benchmark
+runs hit the 84–85% ceiling; this one cleared it.
+
+**What moved:**
+
+*Temporal-reasoning: 82.7% → 90.2% (+7.5pp).* Opus 4.8 does date arithmetic correctly and
+consistently. The gain is almost entirely a model quality effect — the memory context was already
+good enough, but Haiku was making off-by-one errors in duration calculations. A better answerer
+surfaced gains that were always available.
+
+*Single-session-assistant: 80.4% → 89.3% (+8.9pp).* The verbatim extraction fix (`8c707d5`)
+was the primary driver. Observer now explicitly captures indexed list items by exact position,
+physical descriptions, and precise assistant outputs (chess moves, measurements, sequences).
+Diagnosed from an audit of the 11 v0.8-MCP failures: only 2 were genuine extraction failures;
+the other 9 were Haiku judge inconsistencies. Both genuine failures — a 100-item list's 27th entry
+and a screenplay character's shirt — were fixed by the prompt addition.
+
+*Multi-session: FTS sweep.* Spreading activation from 8 seeds doesn't reliably reach nodes from
+older sessions that have decayed below the activation floor. For multi-session counting questions
+this caused off-by-one failures: every counted instance was present except the one in the
+lowest-salience session. Added a supplementary FTS sweep in `query()` that merges matching active
+nodes regardless of activation score. Brought multi-session from 68.4% (v0.9.3 Haiku) to 80.5%.
+Still 3pp below v0.8-MCP — the remaining gap is the MCP agentic multi-query advantage.
+
+**What the 84–85% ceiling means:**
+
+It held across every run until now, and it moved by less than 1pp even with Opus 4.8. The ceiling
+is not a model quality ceiling — it's a retrieval ceiling. `_serialize_structured()` caps at 60
+nodes (up from 50). Some multi-session questions require more than 60 nodes to answer correctly.
+Some preference questions require the exact PREFERENCE node that didn't make the top-15 cap.
+Breaking the ceiling requires either removing caps (risk: context flood, noise, worse results on
+non-counting questions) or smarter relevance ranking that guarantees recall on all instances of
+a type.
+
+**v1.0 methodology:**
+- Extractor: claude-opus-4-8
+- Answerer: claude-opus-4-8
+- Judge: claude-haiku-4-5-20251001
+- Dataset: LongMemEval Oracle split, 500 questions
+- Code: `dory==1.0.0`, commit `097b3c5` (FTS sweep) + `8c707d5` (verbatim extraction)
+
+---
+
+*Last updated: 2026-06-04*
+*Current version: v1.0.0 (PyPI)*
+*Benchmark: 84.8% LongMemEval Oracle, 500 questions, Haiku judge*
+
+---
+
 ## The Problem That Started This
 
 Every agent framework has the same dirty secret: the agent forgets everything the moment the conversation ends. You can build the most sophisticated RAG pipeline in the world, wire up a dozen tools, prompt-engineer your way to impressive single-session demos — and then the next day, the agent has no idea who you are or what you talked about. You start over. Every. Single. Time.
