@@ -341,7 +341,20 @@ def query(topic: str, graph: Graph, reference_date: str = "") -> str:
         activated = act.spread(seeds[:8], graph)
     graph._recompute_salience()
 
-    return _serialize_structured(activated, graph, max_nodes=50, reference_date=reference_date)
+    # Supplementary FTS sweep: directly match nodes by query terms regardless of
+    # activation score. Catches low-salience nodes from older sessions that
+    # spreading activation doesn't reach — critical for multi-session counting
+    # questions where one session's instance has decayed below the activation floor.
+    fts_q = act._fts_query(topic, n=6)
+    if fts_q:
+        fts_hits = store.search_fts(fts_q, graph.path, limit=30)
+        for node_id in fts_hits:
+            if node_id not in activated:
+                node = graph.get_node(node_id)
+                if node and node.zone == "active":
+                    activated[node_id] = node.salience
+
+    return _serialize_structured(activated, graph, max_nodes=60, reference_date=reference_date)
 
 
 def observe(
