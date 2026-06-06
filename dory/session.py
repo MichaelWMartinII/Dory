@@ -164,7 +164,7 @@ def _serialize_structured(
     # Cap to avoid flooding context — sort by salience descending
     always_prefs.sort(key=lambda n: -n.salience)
     always_procs.sort(key=lambda n: -n.salience)
-    always_prefs = always_prefs[:15]
+    always_prefs = always_prefs[:30]
     always_procs = always_procs[:15]
     preferences = [(n, 1.0) for n in always_prefs]
     procedures = [(n, 1.0) for n in always_procs]
@@ -347,14 +347,14 @@ def query(topic: str, graph: Graph, reference_date: str = "") -> str:
     # questions where one session's instance has decayed below the activation floor.
     fts_q = act._fts_query(topic, n=6)
     if fts_q:
-        fts_hits = store.search_fts(fts_q, graph.path, limit=30)
+        fts_hits = store.search_fts(fts_q, graph.path, limit=50)
         for node_id in fts_hits:
             if node_id not in activated:
                 node = graph.get_node(node_id)
                 if node and node.zone == "active":
                     activated[node_id] = node.salience
 
-    return _serialize_structured(activated, graph, max_nodes=60, reference_date=reference_date)
+    return _serialize_structured(activated, graph, max_nodes=90, reference_date=reference_date)
 
 
 def observe(
