@@ -1,4 +1,4 @@
-__version__ = "0.9.0"
+__version__ = "1.0.1"
 
 from .graph import Graph
 from .schema import NodeType, EdgeType

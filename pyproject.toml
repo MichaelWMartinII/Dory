@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dory-memory"
-version = "1.0.0"
-description = "Agent memory with graph-based spreading activation retrieval and principled forgetting. 84.2% on LongMemEval."
+version = "1.0.1"
+description = "Agent memory with graph-based spreading activation retrieval and principled forgetting. 84.8% on LongMemEval."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -13,7 +13,7 @@ authors = [{ name = "Michael Martin" }]
 requires-python = ">=3.11"
 keywords = ["agent", "memory", "llm", "ai", "graph", "local", "rag"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
