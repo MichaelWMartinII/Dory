@@ -1,107 +1,103 @@
-# Codex Integration
+# Using Dory with Codex and other agent tools
 
-This document describes the easiest path to use `Dory` with Codex while
-sharing the same persistent memory graph used by Claude Code.
+`dory-mcp` is a standard MCP stdio server. Any tool that supports MCP can use it — Codex, Claude Code, Cursor, Windsurf, Continue, and others all share the same integration path.
 
-## Goal
-
-Use one database for both tools:
-
-- Claude Code via `dory-mcp`
-- Codex via a local plugin or direct CLI calls
-
-The recommended shared path is:
-
-```bash
-~/.dory/engram.db
-```
-
-That keeps memory durable across sessions and across tools.
-
-## What was added
-
-This repo now includes:
-
-- a Codex plugin scaffold at `plugins/dory-memory/`
-- a local plugin marketplace entry at `.agents/plugins/marketplace.json`
-- machine-readable CLI output for:
-  - `dory query --json`
-  - `dory observe --json`
-  - `dory show --json`
-  - `dory consolidate --json`
-
-These JSON modes make it possible for Codex-side tooling to call `Dory`
-without scraping human-readable terminal output.
-
-## Shared setup
-
-Install the package:
+## Install
 
 ```bash
 pip install 'dory-memory[mcp]'
+which dory-mcp   # note the full path — you'll need it in config
 ```
 
-Use the same database path everywhere:
+## Shared database
+
+Point every tool at the same database file so they share one memory graph:
 
 ```bash
 export DORY_DB_PATH="$HOME/.dory/engram.db"
 ```
 
-Claude Code can keep using:
+Or pass `--db ~/.dory/engram.db` in each tool's MCP server args. The default is `~/.dory/engram.db` if neither is set.
 
-```bash
-claude mcp add --scope user dory -- dory-mcp --db ~/.dory/engram.db
+## Codex
+
+Add to `~/.codex/config.yaml`:
+
+```yaml
+mcpServers:
+  dory:
+    command: /full/path/to/dory-mcp
+    args:
+      - --db
+      - ~/.dory/engram.db
 ```
 
-## Codex path
-
-There are two viable Codex integration paths.
-
-### 1. Plugin path
-
-Point Codex at the local plugin marketplace in this repo and install the
-`dory-memory` plugin.
-
-The plugin is intentionally thin. It standardizes the workflow:
-
-- query memory at session start
-- observe durable facts during work
-- consolidate at session end
-
-### 2. Direct CLI path
-
-Even without plugin installation, Codex can use the same shared memory by
-calling the CLI directly:
+## Claude Code
 
 ```bash
-export DORY_DB_PATH="$HOME/.dory/engram.db"
-python /path/to/Dory/dory_cli.py query --json "current project status"
-python /path/to/Dory/dory_cli.py observe --json CONCEPT "Current workstream is v0.8 benchmark iteration"
-python /path/to/Dory/dory_cli.py consolidate --json
+claude mcp add --scope user dory -- /full/path/to/dory-mcp --db ~/.dory/engram.db
+claude mcp list   # should show dory ✓ Connected
 ```
+
+## Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dory": {
+      "command": "/full/path/to/dory-mcp",
+      "args": ["--db", "/Users/you/.dory/engram.db"]
+    }
+  }
+}
+```
+
+## Cursor / Windsurf / Continue / any MCP client
+
+Add to the tool's MCP server config (usually a JSON file):
+
+```json
+{
+  "mcpServers": {
+    "dory": {
+      "command": "/full/path/to/dory-mcp",
+      "args": ["--db", "/Users/you/.dory/engram.db"]
+    }
+  }
+}
+```
+
+## Tools exposed
+
+| Tool | What it does |
+|---|---|
+| `dory_query` | Spreading activation retrieval — call at session start or topic switch |
+| `dory_observe` | Store a durable fact, preference, or decision |
+| `dory_consolidate` | Decay, dedup, promote core memories — call at session end |
+| `dory_stats` | Node/edge counts and core memory list |
+| `dory_visualize` | Open the D3 graph in a browser |
 
 ## Recommended agent contract
 
-For Codex and other agent tools, the integration contract should be:
+Regardless of which tool you use:
 
-1. At session start or topic switch, query memory.
-2. When a durable fact or decision appears, store it.
-3. At session end, consolidate memory.
+1. **Session start** — call `dory_query` with the current topic to load relevant context.
+2. **During work** — call `dory_observe` when a durable fact, decision, or preference appears.
+3. **Session end** — call `dory_consolidate` to decay old memories and resolve conflicts.
 
-That contract is more important than the client-specific UI.
+That contract is more important than the client-specific configuration.
 
-## Limitations
+## What to store
 
-- This does not magically attach every Codex session to `Dory`; the client
-  still needs to install the plugin or call the CLI.
-- Claude Code remains the more mature MCP environment today.
-- Codex integration is currently a local-plugin workflow, not a published
-  marketplace integration.
+Store:
+- project goals and active workstreams
+- architectural decisions and tradeoffs
+- user preferences that matter across sessions
+- benchmark status and open issues
 
-## Revert
-
-To remove the Codex integration scaffolding:
-
-1. Delete `.agents/plugins/marketplace.json`.
-2. Delete `plugins/dory-memory/`.
-3. Stop using `--json` CLI modes if they are no longer needed.
+Do not store:
+- transient scratchpad thoughts
+- one-off filler
+- secrets or credentials

@@ -113,32 +113,62 @@ messages = result.as_anthropic_messages(user_query)   # Anthropic SDK w/ cache_c
 messages = result.as_openai_messages(user_query)      # OpenAI / compat
 ```
 
-### MCP server (Claude Code / Claude Desktop)
+### MCP server
+
+`dory-mcp` is a standard MCP stdio server. It works with any MCP-compatible agent tool.
 
 ```bash
 pip install 'dory-memory[mcp]'
-
-# Find the installed binary path (needed if installed in a venv)
-which dory-mcp
-
-# Register globally across all Claude Code projects
-claude mcp add --scope user dory -- /full/path/to/dory-mcp --db ~/.dory/engram.db
+which dory-mcp   # note this path — you'll need it below
 ```
 
-The `--db` path defaults to `~/.dory/engram.db` if omitted. You can also set `DORY_DB_PATH` as an environment variable.
-
-Verify the server connected:
-```bash
-claude mcp list   # should show dory ✓ Connected
-```
+The `--db` path defaults to `~/.dory/engram.db` if omitted. You can also set `DORY_DB_PATH` as an environment variable. **Use the same path across all tools** so they share one memory graph.
 
 Five tools are exposed: `dory_query`, `dory_observe`, `dory_consolidate`, `dory_visualize`, `dory_stats`.
 
-For a practical repo-local workflow with tools like Codex and Claude Code, see
-`docs/AGENT_MEMORY_WORKFLOW.md`.
+**Claude Code** — registers globally across all projects:
+```bash
+claude mcp add --scope user dory -- /full/path/to/dory-mcp --db ~/.dory/engram.db
+claude mcp list   # should show dory ✓ Connected
+```
 
-For shared memory between Codex and Claude Code, see
-`docs/CODEX_INTEGRATION.md`.
+**Claude Desktop** — add to `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "dory": {
+      "command": "/full/path/to/dory-mcp",
+      "args": ["--db", "/Users/you/.dory/engram.db"]
+    }
+  }
+}
+```
+
+**Codex** — add to `~/.codex/config.yaml`:
+```yaml
+mcpServers:
+  dory:
+    command: /full/path/to/dory-mcp
+    args:
+      - --db
+      - ~/.dory/engram.db
+```
+
+**Cursor / Windsurf / Continue / any MCP client** — add to the tool's MCP server config (usually a JSON file):
+```json
+{
+  "mcpServers": {
+    "dory": {
+      "command": "/full/path/to/dory-mcp",
+      "args": ["--db", "/Users/you/.dory/engram.db"]
+    }
+  }
+}
+```
+
+For a practical repo-local workflow, see `docs/AGENT_MEMORY_WORKFLOW.md`.
+
+For shared memory across multiple tools in the same project, see `docs/CODEX_INTEGRATION.md`.
 
 ### REST API + browser extension
 
@@ -160,18 +190,6 @@ Endpoints: `GET /health` · `GET /query?topic=...` · `POST /observe` · `POST /
 3. Open any supported chat site — the Dory panel slides in from the right
 
 The panel queries your memory graph on page load, re-queries after each AI response, and auto-extracts memories from every conversation turn in the background. `Cmd+Shift+M` toggles the panel.
-
-**Claude Desktop** — add to `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "dory": {
-      "command": "/full/path/to/dory-mcp",
-      "args": ["--db", "/Users/you/.dory/engram.db"]
-    }
-  }
-}
-```
 
 ---
 
