@@ -559,10 +559,9 @@ Benchmark caveats:
 
 ## Current priorities
 
-- **SS-preference retrieval** — v1.0 regressed on preference questions (70% → 60%) because Opus 4.8 extracts more PREFERENCE nodes than Haiku, causing the 15-node cap to cut relevant entries. Raising the cap to 30 is a targeted one-line fix.
-- **Multi-session aggregation ceiling** — off-by-one counting failures persist for questions requiring all instances of a fact across many sessions. The FTS sweep fix helped (68.4% → 80.5%) but retrieval is still capped at 60 nodes; some questions need more.
 - **True forgetting** — nodes move active → archived → expired but are never deleted. Add hard deletion after N consolidation cycles in the expired zone.
 - **Privacy layer** — `privacy_level` field on Node (`default` / `private` / `sensitive`), `dory forget <query>` for immediate deletion, `dory export` for portability.
+- **v2.0 unified retrieval** — replace heuristic routing with spreading activation → top-k → single LLM reasoning step. Required to break the ~85% benchmark ceiling.
 
 ---
 
