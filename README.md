@@ -17,9 +17,9 @@ print(mem.query("what does the user prefer for inference?"))
 # → MLX (updated preference, supersedes llama.cpp)
 ```
 
-**Current benchmark result:** 84.2% on LongMemEval (500-question oracle split) — Sonnet extraction + Claude Code MCP agentic answering. See [Benchmark results](#benchmark-results) and [Reproducing the benchmark](#reproducing-the-benchmark).
+**Current benchmark result:** 84.8% on LongMemEval (500-question oracle split, Haiku judge) — all-time best. Temporal-reasoning 90.2%, single-session-assistant 89.3%. See [Benchmark results](#benchmark-results) and [Reproducing the benchmark](#reproducing-the-benchmark).
 
-**v0.9.1** — REST API server (`dory serve`), browser extension for claude.ai / ChatGPT / Gemini / Perplexity, PREFERENCE nodes always surfaced in context.
+**v1.0.0** — verbatim extraction from assistant turns, supplementary FTS sweep for multi-session retrieval, all-time best benchmark score.
 
 ---
 
@@ -461,30 +461,25 @@ Q4 · Semantic Path — "How does the local-first preference connect to the mode
 | v0.5 | Haiku | Claude Code (MCP) | 500 | 79.6% |
 | v0.6 | Haiku | Claude Code (MCP) | 500 | 84.0% |
 | v0.7 | Haiku | Claude Code (MCP) | 500 | 84.2% |
-| **v0.8** | **Sonnet** | **Claude Code (MCP)** | **500** | **84.2%** |
-| v0.9.1 | Haiku | Claude Code (MCP) | 50† | 84.0% |
+| v0.8 | Sonnet | Claude Code (MCP) | 500 | 84.2% |
+| **v1.0** | **Opus 4.8** | **Opus 4.8** | **500** | **84.8%** |
 
-†50-question stratified spot check — not directly comparable to 500q full runs. Variance ±2pp.
+Category breakdown for v1.0 (Opus 4.8 extract + answer, Haiku judge):
 
-Category breakdown for the current best run (v0.8, Sonnet extract + MCP answer):
-
-| Category | Score | Δ vs v0.7 |
+| Category | Score | Δ vs v0.8 |
 |---|---|---|
-| single-session-user | 94.3% | — |
-| knowledge-update | 87.2% | -5.1pp |
-| multi-session | 83.5% | -2.2pp |
-| temporal-reasoning | 82.7% | **+7.5pp** |
-| single-session-assistant | 80.4% | -12.5pp |
-| single-session-preference | 70.0% | **+13.3pp** |
-| abstention | 73.3% | +6.6pp |
+| single-session-user | 91.4% | -2.9pp |
+| temporal-reasoning | **90.2%** | **+7.5pp** |
+| single-session-assistant | **89.3%** | **+8.9pp** |
+| multi-session | 80.5% | -3.0pp |
+| knowledge-update | 83.3% | -3.9pp |
+| single-session-preference | 60.0% | -10.0pp |
 
-Sonnet extraction brings real gains on temporal and preference but trades ground on knowledge-update and single-session-assistant vs. Haiku. Net score is flat. The agentic MCP answering backend is non-negotiable — switching to static API answering dropped the score to 80.6%.
+v1.0 gains are driven by the verbatim extraction fix (+8.9pp on ss-assistant) and Opus 4.8's stronger temporal reasoning (+7.5pp). Multi-session improved significantly from v0.9.3 (68.4% → 80.5%) due to the FTS sweep fix.
 
-Artifacts and writeups:
+Artifacts:
 
-- [`docs/BENCHMARK_REPORT_v08_sonnet_mcp.md`](docs/BENCHMARK_REPORT_v08_sonnet_mcp.md)
-- [`benchmarks/predictions_v08_sonnet_mcp_full.jsonl`](benchmarks/predictions_v08_sonnet_mcp_full.jsonl)
-- [`benchmarks/predictions_v08_sonnet_mcp_full.eval.jsonl`](benchmarks/predictions_v08_sonnet_mcp_full.eval.jsonl)
+- [`benchmarks/predictions_v10_opus48_full_20260604_004159.jsonl`](benchmarks/predictions_v10_opus48_full_20260604_004159.jsonl)
 - [`benchmarks/README.md`](benchmarks/README.md)
 
 **Note:** LongMemEval oracle split uses pre-filtered context (~15K tokens per question). Performance with live, unfiltered conversations will differ.
@@ -501,15 +496,15 @@ source .env
 ./run_benchmark.sh
 ```
 
-That script runs:
+That script runs with Haiku for both extract and answer by default. For the v1.0 result (Opus 4.8):
 
 ```bash
 python3 benchmarks/longmemeval.py \
   --data benchmarks/data/longmemeval/longmemeval_oracle.json \
   --output benchmarks/predictions_$(date +%Y%m%d_%H%M%S).jsonl \
   --backend anthropic \
-  --extract-model claude-haiku-4-5-20251001 \
-  --answer-model claude-haiku-4-5-20251001 \
+  --extract-model claude-opus-4-8 \
+  --answer-model claude-opus-4-8 \
   --api-key "$ANTHROPIC_API_KEY" \
   --verbose
 ```
@@ -546,10 +541,10 @@ Benchmark caveats:
 
 ## Current priorities
 
-- **Observer extraction quality** — Haiku misses specific media titles, named events, and implicit preferences. Prompt tuning to preserve exact entities as PREFERENCE/EVENT nodes is the highest-leverage improvement available. Expected to directly unblock the 84–85% benchmark ceiling.
-- **True forgetting** — nodes move active → archived → expired but are never deleted. Add hard deletion after N consolidation cycles in the expired zone. Tighten decay λ from 0.05 → 0.08 for non-core nodes (~9-day half-life vs current ~14-day).
+- **SS-preference retrieval** — v1.0 regressed on preference questions (70% → 60%) because Opus 4.8 extracts more PREFERENCE nodes than Haiku, causing the 15-node cap to cut relevant entries. Raising the cap to 30 is a targeted one-line fix.
+- **Multi-session aggregation ceiling** — off-by-one counting failures persist for questions requiring all instances of a fact across many sessions. The FTS sweep fix helped (68.4% → 80.5%) but retrieval is still capped at 60 nodes; some questions need more.
+- **True forgetting** — nodes move active → archived → expired but are never deleted. Add hard deletion after N consolidation cycles in the expired zone.
 - **Privacy layer** — `privacy_level` field on Node (`default` / `private` / `sensitive`), `dory forget <query>` for immediate deletion, `dory export` for portability.
-- **launchd service** — template plist to run `dory serve` as a macOS background service so the browser extension works without manual startup.
 
 ---
 
