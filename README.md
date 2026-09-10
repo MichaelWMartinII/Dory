@@ -44,7 +44,9 @@ The deeper problem: naive context injection makes things *worse*. Research ([Chr
 
 **Cacheable prefix output** — Dory splits output into a *stable prefix* (unchanged until memory changes, enabling prompt cache hits) and a *dynamic suffix* (query-specific). This is designed to reduce prompt churn and make repeated agent calls cheaper.
 
-**Principled forgetting** — three decay zones: active, archived, expired. Scores based on recency + frequency + relevance. Archived memories are queryable for historical context ("what was true in January?"). Nothing is ever deleted — only decayed.
+**Principled forgetting** — three decay zones: active, archived, expired. Scores based on recency + frequency + relevance. Archived memories are queryable for historical context ("what was true in January?"). Decay never deletes; it only changes visibility.
+
+**Provable erasure** — `dory forget` physically removes content from nodes, edges, the search index, and the raw conversation turns it was derived from, then writes a hash-chained receipt so the deletion can be verified later without retaining what was deleted.
 
 **Bi-temporal conflict resolution** — when a fact changes, the old version is archived with a `SUPERSEDES` edge and a timestamp. Full provenance for every update.
 
@@ -406,7 +408,78 @@ Vector search activates automatically once `nomic-embed-text` is available. Fall
 | `archived` | Invisible to normal queries | `graph.all_nodes(zone="archived")` |
 | `expired` | Completely invisible | `graph.all_nodes(zone=None)` |
 
-Memory is never deleted — only decayed. Archived and expired nodes retain full provenance and can be restored if reactivated. The one exception: exact structural duplicates detected by the Reflector are hard-merged (lower-salience copy removed, edges rewired to the winner).
+Decay never deletes — it only moves nodes between zones. Archived and expired nodes retain full provenance and can be restored if reactivated. Exact structural duplicates detected by the Reflector are hard-merged (lower-salience copy removed, edges rewired to the winner).
+
+Deletion is a separate, explicit operation: see [Erasure](#erasure) below. Decay makes memory *invisible*; erasure makes it *gone*. Do not confuse the two — an expired node is still fully present on disk.
+
+---
+
+## Erasure
+
+Decay hides memory. Erasure removes it.
+
+`dory forget` is the only operation in Dory that physically destroys data, and
+it covers every surface that holds it — not just the graph:
+
+| Surface | What lives there |
+|---|---|
+| `nodes` | the semantic memory itself, in every zone including archived and expired |
+| `edges` | every edge incident to an erased node |
+| `nodes_fts` | the search index, including FTS5's shadow segments |
+| `observations` | the raw conversation turns the nodes were extracted from |
+| `compressed_obs` | summaries derived from those turns |
+
+The raw-turn surface is the one that is easy to miss and the one that matters
+most. Deleting a node while leaving the turn that produced it means the text is
+still on disk in plaintext.
+
+```bash
+dory forget "chicago"          # preview — shows what would go, changes nothing
+dory forget "chicago" --yes    # erase permanently
+dory receipts                  # the erasure log
+dory verify-erasure            # prove it held
+```
+
+### Why it's provable
+
+Every erasure writes a receipt recording SHA-256 hashes of the destroyed
+content — never the content itself. Receipts are chained: each one carries the
+hash of its predecessor, so editing or removing a past receipt breaks every
+receipt after it.
+
+That gives two independently checkable properties:
+
+- **`verify_chain()`** — no receipt was altered, removed, or reordered.
+- **`verify_erasure()`** — re-hashes everything currently stored and confirms
+  nothing matches a hash in any receipt. This proves the content is *still*
+  absent, not merely that a delete once ran.
+
+```python
+from dory import erasure
+
+print(erasure.verify(graph.path))
+# {'chain_valid': True, 'erasure_holds': True, 'receipts': 3, ...}
+```
+
+### Details that matter
+
+- **The bytes really go.** `PRAGMA secure_delete=ON` zeroes freed pages, the WAL
+  is checkpointed, and the file is `VACUUM`ed. Without all three, "deleted"
+  content stays recoverable with a hex editor.
+- **The query is not retained.** The search term is often the exact thing being
+  erased, so receipts store only a hash of it. Pass `--retain-query` when the
+  term is not itself sensitive.
+- **Provenance is forward-looking.** Nodes record `source_obs_ids` at extraction
+  time. Nodes written before this existed have no provenance link, so erasing
+  them will not find their originating turns by that route — the direct content
+  search still catches turns that mention the query.
+- **`--cascade` is opt-in.** It also erases nodes derived from an erased turn
+  even when their own text doesn't match. Off by default, because those nodes
+  are abstractions that may no longer contain the erased content, and removing
+  them deletes more than was asked for.
+- **Hashes are unsalted** so third parties can verify them. That makes short or
+  guessable content brute-forceable from a receipt; the receipt log is not a
+  safe place for low-entropy secrets.
 
 ---
 
@@ -414,7 +487,8 @@ Memory is never deleted — only decayed. Archived and expired nodes retain full
 
 | Feature | Dory |
 |---|---|
-| Principled forgetting (decay + true deletion) | ✓ |
+| Principled forgetting (decay zones) | ✓ |
+| Provable erasure (hard delete + hash-chained receipts) | ✓ |
 | Spreading activation retrieval | ✓ |
 | Cacheable prefix output | ✓ |
 | Bi-temporal conflict resolution | ✓ |
@@ -559,8 +633,8 @@ Benchmark caveats:
 
 ## Current priorities
 
-- **True forgetting** — nodes move active → archived → expired but are never deleted. Add hard deletion after N consolidation cycles in the expired zone.
-- **Privacy layer** — `privacy_level` field on Node (`default` / `private` / `sensitive`), `dory forget <query>` for immediate deletion, `dory export` for portability.
+- **Automatic expiry** — `dory forget` erases on demand; erasing automatically after N consolidation cycles in the expired zone is not yet wired up.
+- **Privacy layer** — `privacy_level` field on Node (`default` / `private` / `sensitive`) to mark content for shorter retention. Erasure and receipts are done; classification is not.
 - **v2.0 unified retrieval** — replace heuristic routing with spreading activation → top-k → single LLM reasoning step. Required to break the ~85% benchmark ceiling.
 
 ---

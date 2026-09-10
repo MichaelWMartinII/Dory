@@ -65,6 +65,26 @@ CREATE TABLE IF NOT EXISTS compressed_obs (
     referenced_at TEXT,
     source_ids TEXT DEFAULT '[]'
 );
+
+-- Append-only, hash-chained log of erasure operations.
+-- Each receipt records WHAT was erased (as SHA-256 content hashes, never the
+-- content itself) so erasure can be proven after the fact without retaining
+-- the erased data. prev_hash links each receipt to its predecessor: editing or
+-- removing any receipt breaks the chain and is detectable by verify_chain().
+CREATE TABLE IF NOT EXISTS erasure_receipts (
+    id TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    query TEXT NOT NULL,
+    query_hash TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL,
+    node_ids TEXT DEFAULT '[]',
+    content_hashes TEXT DEFAULT '[]',
+    counts TEXT DEFAULT '{}',
+    vacuumed INTEGER DEFAULT 0,
+    prev_hash TEXT,
+    receipt_hash TEXT NOT NULL
+);
 """
 
 
@@ -81,6 +101,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
+
+    for col, defn in [("query_hash", "TEXT NOT NULL DEFAULT ''")]:
+        try:
+            conn.execute(f"ALTER TABLE erasure_receipts ADD COLUMN {col} {defn}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists, or table not created yet
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -104,6 +131,10 @@ def _connect(path: Path) -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        # Overwrite freed pages with zeros on delete. Without this SQLite merely
+        # unlinks a row and the bytes stay recoverable in the file's free list —
+        # which would make "erased" a claim we could not honestly make.
+        conn.execute("PRAGMA secure_delete=ON")
         conn.executescript(_SCHEMA)
         _migrate(conn)
         cache[key] = conn
@@ -299,3 +330,256 @@ def get_observations(
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Erasure primitives
+#
+# These are the only functions that physically remove rows outside of
+# store.save()'s tombstone path. They are deliberately dumb: erasure.py owns
+# the policy (what to erase), store.py owns the mechanics (making it gone).
+# ---------------------------------------------------------------------------
+
+
+def get_observations_by_ids(
+    obs_ids: list[str],
+    path: Path = DEFAULT_GRAPH_PATH,
+) -> list[dict]:
+    """Fetch specific observations by id. Used to hash content before erasing it."""
+    if not obs_ids:
+        return []
+    conn = _connect(path)
+    rows = conn.execute(
+        f"SELECT * FROM observations WHERE id IN ({','.join('?'*len(obs_ids))})",
+        obs_ids,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def search_observations(
+    terms: list[str],
+    path: Path = DEFAULT_GRAPH_PATH,
+) -> list[dict]:
+    """
+    Substring-AND search over raw observation content.
+
+    Deliberately not FTS: erasure must catch partial words and punctuation that
+    a tokenizer would drop. Missing a row here means failing to erase it.
+    """
+    if not terms:
+        return []
+    conn = _connect(path)
+    rows = conn.execute("SELECT * FROM observations").fetchall()
+    lowered = [t.lower() for t in terms]
+    return [
+        dict(r) for r in rows
+        if all(t in (r["content"] or "").lower() for t in lowered)
+    ]
+
+
+def search_compressed_obs(
+    terms: list[str],
+    path: Path = DEFAULT_GRAPH_PATH,
+) -> list[dict]:
+    """Substring-AND search over compressed observation summaries."""
+    if not terms:
+        return []
+    conn = _connect(path)
+    rows = conn.execute("SELECT * FROM compressed_obs").fetchall()
+    lowered = [t.lower() for t in terms]
+    return [
+        dict(r) for r in rows
+        if all(t in (r["content"] or "").lower() for t in lowered)
+    ]
+
+
+def compressed_obs_referencing(
+    obs_ids: list[str],
+    path: Path = DEFAULT_GRAPH_PATH,
+) -> list[dict]:
+    """
+    Find compressed_obs rows whose source_ids include any of these observation ids.
+
+    A compressed summary is derived content: if we erase its sources but leave
+    the summary, the erased text can still be present in paraphrase.
+    """
+    if not obs_ids:
+        return []
+    wanted = set(obs_ids)
+    conn = _connect(path)
+    rows = conn.execute("SELECT * FROM compressed_obs").fetchall()
+    hits = []
+    for r in rows:
+        try:
+            sources = json.loads(r["source_ids"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            sources = []
+        if wanted & set(sources):
+            hits.append(dict(r))
+    return hits
+
+
+def delete_observations(
+    obs_ids: list[str],
+    path: Path = DEFAULT_GRAPH_PATH,
+) -> int:
+    """Physically delete raw observations. Returns rows removed."""
+    if not obs_ids:
+        return 0
+    conn = _connect(path)
+    cur = conn.execute(
+        f"DELETE FROM observations WHERE id IN ({','.join('?'*len(obs_ids))})",
+        obs_ids,
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def delete_compressed_obs(
+    obs_ids: list[str],
+    path: Path = DEFAULT_GRAPH_PATH,
+) -> int:
+    """Physically delete compressed observation summaries. Returns rows removed."""
+    if not obs_ids:
+        return 0
+    conn = _connect(path)
+    cur = conn.execute(
+        f"DELETE FROM compressed_obs WHERE id IN ({','.join('?'*len(obs_ids))})",
+        obs_ids,
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def purge_fts_index(path: Path = DEFAULT_GRAPH_PATH) -> None:
+    """
+    Drop and rebuild the FTS index from scratch.
+
+    store.save() clears nodes_fts with DELETE and reinserts, which is correct
+    logically but leaves the deleted terms sitting in FTS5's shadow segment
+    blobs (nodes_fts_data) until a merge happens to overwrite them. Erased
+    content is therefore still recoverable from the index. Dropping the virtual
+    table discards those segments outright.
+    """
+    conn = _connect(path)
+    conn.execute("DROP TABLE IF EXISTS nodes_fts")
+    conn.execute(
+        "CREATE VIRTUAL TABLE nodes_fts USING fts5(id UNINDEXED, content, tags)"
+    )
+    rows = conn.execute("SELECT id, content, tags FROM nodes").fetchall()
+    for row in rows:
+        raw_tags = row["tags"] or "[]"
+        tags_list = raw_tags if isinstance(raw_tags, list) else json.loads(raw_tags)
+        conn.execute(
+            "INSERT INTO nodes_fts (id, content, tags) VALUES (?,?,?)",
+            (row["id"], row["content"], " ".join(tags_list)),
+        )
+    conn.commit()
+
+
+def purge_free_pages(path: Path = DEFAULT_GRAPH_PATH) -> None:
+    """
+    Checkpoint the WAL and VACUUM so erased bytes leave the file.
+
+    secure_delete zeroes freed pages in the main database, but in WAL mode the
+    pre-delete image can still sit in the -wal file until a checkpoint, and the
+    file never shrinks without a VACUUM. Both are required before erasure can
+    honestly be called complete.
+    """
+    conn = _connect(path)
+    conn.commit()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    # VACUUM cannot run inside a transaction; isolation_level=None for this call.
+    prior = conn.isolation_level
+    try:
+        conn.isolation_level = None
+        conn.execute("VACUUM")
+    finally:
+        conn.isolation_level = prior
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Erasure receipts (append-only hash chain)
+# ---------------------------------------------------------------------------
+
+
+def append_receipt(receipt: dict, path: Path = DEFAULT_GRAPH_PATH) -> None:
+    """Append one receipt. Callers must have computed seq/prev_hash/receipt_hash."""
+    conn = _connect(path)
+    conn.execute(
+        """
+        INSERT INTO erasure_receipts
+            (id, seq, created_at, query, query_hash, mode, node_ids, content_hashes,
+             counts, vacuumed, prev_hash, receipt_hash)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            receipt["id"], receipt["seq"], receipt["created_at"],
+            receipt["query"], receipt["query_hash"], receipt["mode"],
+            json.dumps(receipt["node_ids"]),
+            json.dumps(receipt["content_hashes"]),
+            json.dumps(receipt["counts"]),
+            int(receipt["vacuumed"]),
+            receipt["prev_hash"],
+            receipt["receipt_hash"],
+        ),
+    )
+    conn.commit()
+
+
+def get_receipts(path: Path = DEFAULT_GRAPH_PATH, limit: int | None = None) -> list[dict]:
+    """Return receipts in chain order (oldest first)."""
+    conn = _connect(path)
+    sql = "SELECT * FROM erasure_receipts ORDER BY seq ASC"
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    rows = conn.execute(sql).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["node_ids"] = json.loads(d.get("node_ids") or "[]")
+        d["content_hashes"] = json.loads(d.get("content_hashes") or "[]")
+        d["counts"] = json.loads(d.get("counts") or "{}")
+        d["vacuumed"] = bool(d.get("vacuumed"))
+        d.setdefault("query_hash", "")
+        out.append(d)
+    return out
+
+
+def last_receipt(path: Path = DEFAULT_GRAPH_PATH) -> dict | None:
+    """Return the most recent receipt in the chain, or None if the chain is empty."""
+    conn = _connect(path)
+    row = conn.execute(
+        "SELECT * FROM erasure_receipts ORDER BY seq DESC LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    d["node_ids"] = json.loads(d.get("node_ids") or "[]")
+    d["content_hashes"] = json.loads(d.get("content_hashes") or "[]")
+    d["counts"] = json.loads(d.get("counts") or "{}")
+    d["vacuumed"] = bool(d.get("vacuumed"))
+    d.setdefault("query_hash", "")
+    return d
+
+
+def all_content_for_audit(path: Path = DEFAULT_GRAPH_PATH) -> list[str]:
+    """
+    Every piece of stored content that erasure is responsible for.
+
+    verify_erasure() hashes each of these and checks none matches a hash
+    recorded in a receipt. If one does, the erasure did not hold.
+    """
+    conn = _connect(path)
+    out: list[str] = []
+    for table, col in (
+        ("nodes", "content"),
+        ("observations", "content"),
+        ("compressed_obs", "content"),
+    ):
+        for row in conn.execute(f"SELECT {col} FROM {table}").fetchall():
+            if row[0]:
+                out.append(row[0])
+    return out

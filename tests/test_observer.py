@@ -245,3 +245,54 @@ def test_observer_uses_openai_compat_backend(db_path, graph):
 
     mock_llm.assert_called_once()
     assert len(graph.all_nodes()) == 1
+
+
+# --- provenance (dory.erasure depends on this link) ---
+
+def test_extracted_node_records_source_observations(db_path, graph):
+    """
+    Nodes must record which raw turns produced them. Without this link, erasing
+    a node cannot find the originating turn and the text survives the erasure.
+    """
+    with patch("dory.pipeline.observer._call_ollama") as mock_llm:
+        mock_llm.return_value = _extracted([_node_extract("Michael uses FastAPI")])
+        obs = Observer(graph, db_path=db_path, threshold=2, backend="ollama")
+        obs.add_turn("user", "I build my backends with FastAPI these days")
+        obs.add_turn("assistant", "Good choice for async APIs")
+        obs.flush()
+
+    node = next(n for n in graph.all_nodes(zone=None) if "FastAPI" in n.content)
+    source_ids = node.metadata.get("source_obs_ids")
+    assert source_ids, "node has no provenance"
+
+    logged = {r["id"] for r in store.get_observations(db_path, limit=100)}
+    assert set(source_ids) <= logged
+
+
+def test_reinforced_node_accumulates_provenance(db_path, graph):
+    """A node reinforced across turns derives from all of them."""
+    with patch("dory.pipeline.observer._call_ollama") as mock_llm:
+        mock_llm.return_value = _extracted([_node_extract("Michael uses FastAPI")])
+        obs = Observer(graph, db_path=db_path, threshold=2, backend="ollama")
+        obs.add_turn("user", "I use FastAPI")
+        obs.add_turn("assistant", "noted")
+        obs.flush()
+
+        node = next(n for n in graph.all_nodes(zone=None) if "FastAPI" in n.content)
+        first = set(node.metadata.get("source_obs_ids") or [])
+
+        obs.add_turn("user", "still using FastAPI on the new project")
+        obs.add_turn("assistant", "makes sense")
+        obs.flush()
+
+    node = next(n for n in graph.all_nodes(zone=None) if "FastAPI" in n.content)
+    accumulated = set(node.metadata.get("source_obs_ids") or [])
+    assert first < accumulated, "reinforcement dropped earlier provenance"
+
+
+def test_low_info_turns_are_logged_but_not_linked(db_path, graph):
+    """Filtered turns still reach the observation log, so erasure can still reach them."""
+    obs = Observer(graph, db_path=db_path, threshold=10)
+    obs.add_turn("user", "ok")
+    rows = store.get_observations(db_path, limit=10)
+    assert len(rows) == 1

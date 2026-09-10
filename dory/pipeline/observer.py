@@ -399,7 +399,10 @@ class Observer:
         self._stats["turns_logged"] += 1
         if _is_low_info(content):
             return  # log to episodic store but skip extraction buffer
-        self._buffer.append({"role": role, "content": content})
+        # obs_id travels with the turn so _write() can stamp provenance onto the
+        # nodes extracted from it. Without this link, erasing a node cannot find
+        # the raw turn it came from and the text survives the erasure.
+        self._buffer.append({"role": role, "content": content, "obs_id": obs_id})
 
         if len(self._buffer) >= self.threshold:
             # Snapshot and clear the buffer immediately so add_turn() returns fast.
@@ -458,6 +461,7 @@ class Observer:
         turns_text = "\n".join(
             f"{t['role'].upper()}: {t['content']}" for t in buffer_snapshot
         )
+        source_obs_ids = [t["obs_id"] for t in buffer_snapshot if t.get("obs_id")]
         self._stats["extractions_run"] += 1
 
         raw = self._call_llm(turns_text, session_date=session_date)
@@ -466,12 +470,14 @@ class Observer:
             return
 
         with self._write_lock:
-            self._write(raw)
+            self._write(raw, source_obs_ids=source_obs_ids)
             # Optional second pass: infer implicit preferences from extracted events/concepts
             if self.infer_implicit and raw.get("nodes"):
                 implicit = self._infer_implicit_preferences(raw["nodes"])
                 if implicit:
-                    self._write({"nodes": implicit, "edges": []})
+                    # Implicit nodes are inferred from the same turns, so they
+                    # inherit the same provenance.
+                    self._write({"nodes": implicit, "edges": []}, source_obs_ids=source_obs_ids)
                     self._stats["implicit_inferred"] += len(implicit)
 
     def _call_llm(self, turns_text: str, session_date: str = "") -> dict | None:
@@ -483,8 +489,15 @@ class Observer:
             return _call_anthropic(turns_text, self.model, self.api_key, session_date=session_date)
         return None
 
-    def _write(self, extracted: dict) -> None:
-        """Write extracted nodes and edges into the graph."""
+    def _write(self, extracted: dict, source_obs_ids: list[str] | None = None) -> None:
+        """
+        Write extracted nodes and edges into the graph.
+
+        source_obs_ids records which raw observations these nodes were derived
+        from. dory.erasure uses that link to remove the originating turns when a
+        node is erased.
+        """
+        source_obs_ids = source_obs_ids or []
         nodes_data = extracted.get("nodes", [])
         edges_data = extracted.get("edges", [])
 
@@ -542,6 +555,13 @@ class Observer:
                     sessions_seen = list(sessions_seen) + [self.session_id]
                     existing.metadata["sessions_seen"] = sessions_seen
                     existing.distinct_sessions = len(sessions_seen)
+                # A reinforced node now derives from these turns too — every one
+                # of them has to be erasable along with it.
+                if source_obs_ids:
+                    prior: list = existing.metadata.get("source_obs_ids") or []
+                    existing.metadata["source_obs_ids"] = sorted(
+                        set(prior) | set(source_obs_ids)
+                    )
                 content_to_id[content] = existing.id
                 self._stats["nodes_written"] += 1
                 continue
@@ -586,6 +606,9 @@ class Observer:
                 # First session to see this node
                 node.distinct_sessions = 1
                 node.metadata["sessions_seen"] = [self.session_id]
+                # Provenance: the raw turns this node was extracted from.
+                if source_obs_ids:
+                    node.metadata["source_obs_ids"] = sorted(set(source_obs_ids))
                 # Structured fields for aggregation and duration queries
                 node.metadata["occurrence_count"] = 1
                 start_date = (nd.get("start_date") or "").strip()

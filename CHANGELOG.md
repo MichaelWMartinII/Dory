@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Provable erasure** (`dory/erasure.py`) — the first operation in Dory that physically
+  destroys data. `plan()` previews, `execute()` erases, and both cover every surface that
+  holds content: nodes (in all zones), incident edges, the FTS index, the raw
+  `observations` the nodes were extracted from, and derived `compressed_obs` summaries.
+  Decay was never deletion — this is.
+- **Hash-chained erasure receipts** — every erasure appends a receipt recording SHA-256
+  hashes of the destroyed content, never the content. Each receipt carries its
+  predecessor's hash, so editing or removing one breaks every receipt after it.
+  New `erasure_receipts` table.
+- **Two-part verification** — `verify_chain()` proves no receipt was altered or removed;
+  `verify_erasure()` re-hashes live storage and proves the erased content is *still*
+  absent. Exposed as `erasure.verify(path)`.
+- **CLI: `dory forget`, `dory receipts`, `dory verify-erasure`** — `forget` previews by
+  default and requires `--yes` to destroy. `--cascade` also erases nodes derived from an
+  erased turn; `--retain-query` opts into storing the search term.
+- **Node provenance** — the Observer now stamps `metadata["source_obs_ids"]` on extracted
+  nodes, accumulating across reinforcements. This is the link erasure follows from a node
+  back to the conversation turns that produced it. Forward-looking only: nodes written
+  before this release have no provenance link.
+- 39 tests covering planning, execution, receipts, chain tampering, content resurrection,
+  and byte-level absence from disk.
+
+### Fixed
+- **README claimed a feature that did not exist** — the feature table advertised
+  "Principled forgetting (decay + true deletion)" while the same document stated nothing
+  is ever deleted and listed true forgetting as unbuilt. The table now separates decay
+  zones from erasure, and both entries are accurate.
+- **Erased bytes stayed recoverable on disk** — `PRAGMA secure_delete=ON` now zeroes freed
+  pages, and erasure checkpoints the WAL and `VACUUM`s. Previously a deleted row was
+  merely unlinked and readable with a hex editor.
+- **Erased terms survived in the FTS index** — `store.save()` clears `nodes_fts` with
+  DELETE, which leaves the terms in FTS5's shadow segment blobs (`nodes_fts_data`).
+  Erasure now drops and rebuilds the index (`store.purge_fts_index()`).
+- **The search query leaked the erased content** — receipts stored the query verbatim, and
+  the query is usually the exact thing being erased. Receipts now keep only
+  `query_hash` unless `retain_query=True`.
+
 ## [1.0.0] — 2026-06-04
 
 ### Benchmark

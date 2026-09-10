@@ -9,6 +9,10 @@ Usage:
   python dory_cli.py list [--type CONCEPT]
   python dory_cli.py show
   python dory_cli.py consolidate
+  python dory_cli.py forget "chicago"           # preview what would be erased
+  python dory_cli.py forget "chicago" --yes     # erase it, permanently
+  python dory_cli.py receipts
+  python dory_cli.py verify-erasure
   python dory_cli.py review-session --from-hook    # called from Claude Code Stop hook
   python dory_cli.py review-session --file /path/to/session.jsonl
 """
@@ -466,6 +470,119 @@ def _cmd_serve(args, graph_path: Path) -> None:
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 
+def cmd_forget(args, graph: Graph) -> None:
+    """Erase matching memory from every surface that holds it."""
+    from dory import erasure
+
+    query = " ".join(args.query) if args.query else ""
+    node_ids = args.node_id or None
+
+    if not query and not node_ids:
+        print("Refusing to erase: give a query or --node-id.")
+        print("An empty query would match every stored memory.")
+        sys.exit(2)
+
+    p = erasure.plan(graph, query, node_ids=node_ids, cascade_derived=args.cascade)
+
+    if args.json and not args.yes:
+        print(json.dumps({"plan": p.counts(), "node_ids": p.node_ids}, indent=2))
+        return
+
+    if p.is_empty():
+        print(f"Nothing matches {query or node_ids!r}. No changes made.")
+        return
+
+    print(p.summary())
+
+    if not args.yes:
+        print("\nThis is a preview. Nothing has been erased.")
+        print("Re-run with --yes to erase permanently. This cannot be undone.")
+        return
+
+    receipt = erasure.execute(
+        graph, p,
+        vacuum=not args.no_vacuum,
+        retain_query=args.retain_query,
+    )
+
+    if args.json:
+        print(json.dumps(receipt, indent=2))
+        return
+
+    c = receipt["counts"]
+    print("\nErased:")
+    print(f"  nodes:          {c['nodes']}")
+    print(f"  edges:          {c['edges']}")
+    print(f"  observations:   {c['observations']}")
+    print(f"  compressed_obs: {c['compressed_obs']}")
+    print(f"\nReceipt {receipt['id']} (seq {receipt['seq']})")
+    if not receipt["query"]:
+        print(f"  query:    <not retained> sha256:{receipt['query_hash'][:16]}...")
+    print(f"  hash:     {receipt['receipt_hash']}")
+    print(f"  contents: {len(receipt['content_hashes'])} SHA-256 hashes recorded")
+    print(f"  vacuumed: {receipt['vacuumed']}")
+    print("\nVerify at any time with: dory verify-erasure")
+
+
+def cmd_receipts(args, graph: Graph) -> None:
+    """List the erasure receipt chain."""
+    from dory import store
+
+    receipts = store.get_receipts(graph.path)
+    if args.json:
+        print(json.dumps(receipts, indent=2))
+        return
+
+    if not receipts:
+        print("No erasures recorded.")
+        return
+
+    print(f"{len(receipts)} erasure receipt(s):\n")
+    for r in receipts:
+        c = r["counts"]
+        print(f"  seq {r['seq']}  {r['created_at']}  [{r['id']}]")
+        shown = repr(r["query"]) if r["query"] else f"<not retained> sha256:{r['query_hash'][:16]}..."
+        print(f"    query:    {shown} (mode={r['mode']})")
+        print(
+            f"    erased:   {c.get('nodes', 0)} nodes, {c.get('edges', 0)} edges, "
+            f"{c.get('observations', 0)} observations, "
+            f"{c.get('compressed_obs', 0)} compressed"
+        )
+        print(f"    hashes:   {len(r['content_hashes'])}")
+        print(f"    hash:     {r['receipt_hash'][:16]}...")
+        print()
+
+
+def cmd_verify_erasure(args, graph: Graph) -> None:
+    """Verify the receipt chain is intact and erased content is still absent."""
+    from dory import erasure
+
+    result = erasure.verify(graph.path)
+    if args.json:
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if result["chain_valid"] and result["erasure_holds"] else 1)
+
+    print(f"Receipts:        {result['receipts']}")
+    print(f"Hashes tracked:  {result['hashes_tracked']}")
+    print()
+
+    if result["chain_valid"]:
+        print("  [OK]   Receipt chain intact — no receipt was edited or removed.")
+    else:
+        print("  [FAIL] Receipt chain is broken:")
+        for problem in result["chain_problems"]:
+            print(f"           - {problem}")
+
+    if result["erasure_holds"]:
+        print("  [OK]   Erased content is absent from the database.")
+    else:
+        print("  [FAIL] Erased content is present again:")
+        for item in result["resurrected"]:
+            print(f"           - receipt {item['receipt_id']}: {item['snippet']}")
+
+    sys.exit(0 if result["chain_valid"] and result["erasure_holds"] else 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Dory — graph memory CLI for AI agent sessions"
@@ -564,6 +681,46 @@ def main() -> None:
         help="Re-process even if this session was already reviewed",
     )
 
+    # forget
+    p_forget = sub.add_parser(
+        "forget",
+        help="Permanently erase matching memory from nodes, edges, index, and raw turns",
+    )
+    p_forget.add_argument("query", nargs="*", help="Search terms — all must match")
+    p_forget.add_argument(
+        "--node-id", action="append", default=None,
+        help="Erase this exact node id (repeatable). Overrides the query search.",
+    )
+    p_forget.add_argument(
+        "--cascade", action="store_true",
+        help="Also erase nodes derived from the erased raw turns, even if their own text does not match",
+    )
+    p_forget.add_argument(
+        "--yes", action="store_true",
+        help="Actually erase. Without this the command only previews.",
+    )
+    p_forget.add_argument(
+        "--retain-query", action="store_true",
+        help="Store the search terms in the receipt. Off by default — the query is "
+             "often the very thing being erased.",
+    )
+    p_forget.add_argument(
+        "--no-vacuum", action="store_true",
+        help="Skip the VACUUM. Faster, but erased bytes may remain in free pages.",
+    )
+    p_forget.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+
+    # receipts
+    p_receipts = sub.add_parser("receipts", help="List the erasure receipt chain")
+    p_receipts.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+
+    # verify-erasure
+    p_verify = sub.add_parser(
+        "verify-erasure",
+        help="Prove the receipt chain is intact and erased content is still gone",
+    )
+    p_verify.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+
     args = parser.parse_args()
 
     from dory.store import DEFAULT_GRAPH_PATH
@@ -585,6 +742,9 @@ def main() -> None:
         "visualize": cmd_visualize,
         "consolidate": cmd_consolidate,
         "review-session": cmd_review_session,
+        "forget": cmd_forget,
+        "receipts": cmd_receipts,
+        "verify-erasure": cmd_verify_erasure,
     }
     dispatch[args.command](args, graph)
 
