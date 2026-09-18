@@ -20,7 +20,7 @@ Usage:
 """
 
 import concurrent.futures
-import json
+import logging
 import re
 import threading
 from typing import Any
@@ -29,6 +29,9 @@ from ..graph import Graph
 from ..schema import NodeType, EdgeType, new_id, now_iso
 from .. import store, session as _session
 from ..sanitize import sanitize_node_content
+from .llm_util import LLM_TIMEOUT, parse_llm_json
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Extraction prompt
@@ -177,7 +180,7 @@ def _call_ollama(turns_text: str, model: str, session_date: str = "") -> dict | 
             think=False,
             options={"temperature": 0.1},
         )
-        return json.loads(resp["message"]["content"])
+        return parse_llm_json(resp["message"]["content"]) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -198,16 +201,11 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
             f"{base_url.rstrip('/')}/v1/chat/completions",
             json=payload,
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=60,
+            timeout=LLM_TIMEOUT,
         )
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
-        # Strip <think>...</think> blocks (Qwen3 and similar reasoning models)
-        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            return _extract_json(content) or {"_error": "JSON parse failed"}
+        return parse_llm_json(content) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -224,24 +222,9 @@ def _call_anthropic(turns_text: str, model: str, api_key: str, session_date: str
                 {"role": "user", "content": _user_message(turns_text, session_date)}
             ],
         )
-        raw = resp.content[0].text
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return _extract_json(raw) or {"_error": "JSON parse failed"}
+        return parse_llm_json(resp.content[0].text) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
-
-
-def _extract_json(raw: str) -> dict | None:
-    """Try to pull a JSON object out of a raw text response."""
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-    return None
 
 
 def _extract_numeric_value(text: str) -> float | None:
@@ -433,8 +416,9 @@ class Observer:
         for future in pending:
             try:
                 future.result(timeout=300)
-            except Exception:
+            except Exception as e:
                 self._stats["errors"] += 1
+                logger.warning("Extraction worker failed: %s", e)
 
         self.graph.save()
         return dict(self._stats)
@@ -467,6 +451,10 @@ class Observer:
         raw = self._call_llm(turns_text, session_date=session_date)
         if not raw or "_error" in raw:
             self._stats["errors"] += 1
+            logger.warning(
+                "Extraction failed (%s backend, model %s): %s",
+                self.backend, self.model, (raw or {}).get("_error", "no response"),
+            )
             return
 
         with self._write_lock:
@@ -692,7 +680,7 @@ class Observer:
                     think=False,
                     options={"temperature": 0.1},
                 )
-                raw = json.loads(resp["message"]["content"])
+                raw = parse_llm_json(resp["message"]["content"])
             elif self.backend == "anthropic":
                 import anthropic
                 client = anthropic.Anthropic(api_key=self.api_key)
@@ -702,7 +690,7 @@ class Observer:
                     system=_IMPLICIT_PREF_SYSTEM,
                     messages=[{"role": "user", "content": f"Facts:\n{facts}"}],
                 )
-                raw = json.loads(resp.content[0].text)
+                raw = parse_llm_json(resp.content[0].text)
             elif self.backend == "openai":
                 import httpx
                 r = httpx.post(
@@ -717,12 +705,10 @@ class Observer:
                         "response_format": {"type": "json_object"},
                     },
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=60,
+                    timeout=LLM_TIMEOUT,
                 )
                 r.raise_for_status()
-                content = r.json()["choices"][0]["message"]["content"]
-                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-                raw = json.loads(content)
+                raw = parse_llm_json(r.json()["choices"][0]["message"]["content"])
         except Exception:
             return []
 

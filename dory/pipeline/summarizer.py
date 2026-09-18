@@ -24,11 +24,14 @@ Usage:
     node_id = summarizer.summarize(turns, session_date="2026-03-16")
 """
 
-import json
+import logging
 import re
 
 from ..graph import Graph
 from ..schema import NodeType, EdgeType, new_id, now_iso
+from .llm_util import LLM_TIMEOUT, parse_llm_json
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +130,10 @@ def _call_ollama(turns_text: str, model: str, session_date: str = "") -> dict | 
                 {"role": "user", "content": _user_message(turns_text, session_date)},
             ],
             format="json",
+            think=False,
             options={"temperature": 0.1},
         )
-        return json.loads(resp["message"]["content"])
+        return parse_llm_json(resp["message"]["content"]) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -149,10 +153,10 @@ def _call_openai_compat(turns_text: str, model: str, base_url: str, api_key: str
                 "response_format": {"type": "json_object"},
             },
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=60,
+            timeout=LLM_TIMEOUT,
         )
         r.raise_for_status()
-        return json.loads(r.json()["choices"][0]["message"]["content"])
+        return parse_llm_json(r.json()["choices"][0]["message"]["content"]) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -167,17 +171,7 @@ def _call_anthropic(turns_text: str, model: str, api_key: str, session_date: str
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _user_message(turns_text, session_date)}],
         )
-        raw = resp.content[0].text
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
-        return {"_error": "JSON parse failed"}
+        return parse_llm_json(resp.content[0].text) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -192,9 +186,10 @@ def _call_ollama_summary(turns_text: str, model: str, session_date: str = "") ->
                 {"role": "user", "content": _summary_user_message(turns_text, session_date)},
             ],
             format="json",
+            think=False,
             options={"temperature": 0.1},
         )
-        return json.loads(resp["message"]["content"])
+        return parse_llm_json(resp["message"]["content"]) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -214,10 +209,10 @@ def _call_openai_summary(turns_text: str, model: str, base_url: str, api_key: st
                 "response_format": {"type": "json_object"},
             },
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=60,
+            timeout=LLM_TIMEOUT,
         )
         r.raise_for_status()
-        return json.loads(r.json()["choices"][0]["message"]["content"])
+        return parse_llm_json(r.json()["choices"][0]["message"]["content"]) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -232,17 +227,7 @@ def _call_anthropic_summary(turns_text: str, model: str, api_key: str, session_d
             system=_SUMMARY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _summary_user_message(turns_text, session_date)}],
         )
-        raw = resp.content[0].text
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
-        return {"_error": "JSON parse failed"}
+        return parse_llm_json(resp.content[0].text) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
 
@@ -317,6 +302,7 @@ class Summarizer:
 
         result = self._call_llm(turns_text, session_date=session_date or "")
         if not result or "_error" in result:
+            logger.warning("Session summary failed: %s", (result or {}).get("_error", "no response"))
             return None
 
         summary = (result.get("summary") or "").strip()
@@ -390,6 +376,7 @@ class Summarizer:
 
         result = self._call_summary_llm(turns_text, session_date=session_date or "")
         if not result or "_error" in result:
+            logger.warning("Session summary failed: %s", (result or {}).get("_error", "no response"))
             return None
 
         summary = (result.get("summary") or "").strip()

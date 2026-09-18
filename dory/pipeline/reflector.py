@@ -447,6 +447,7 @@ class Reflector:
                 resp = ollama.chat(
                     model=self.llm_model,
                     messages=[{"role": "user", "content": prompt}],
+                    think=False,
                     options={"temperature": 0.1},
                 )
                 return resp["message"]["content"].strip()
