@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] — 2026-09-18
 
 ### Added
 - **Provable erasure** (`dory/erasure.py`) — the first operation in Dory that physically
@@ -26,6 +26,16 @@
   and byte-level absence from disk.
 
 ### Fixed
+- **Extraction silently produced nothing against a local model** — two causes, both
+  swallowed. Gemma 4 through Ollama wraps its JSON in a ```json fence even when the
+  request asks for bare JSON, which strict `json.loads()` rejects; and the 60s timeout
+  was shorter than a real extraction on consumer hardware, where calls ran 65–93s. New
+  `dory/pipeline/llm_util.py` centralises both: `parse_llm_json()` strips `<think>`
+  blocks and fences before falling back to a brace scan, and `LLM_TIMEOUT` is 180s.
+  `observer`, `reflector` and `summarizer` now share it instead of each carrying its own
+  drifted copy of the parse. Extraction failures are logged rather than discarded.
+  Found via a downstream integration whose graph held 52 raw observations and 0 nodes
+  for five months.
 - **README claimed a feature that did not exist** — the feature table advertised
   "Principled forgetting (decay + true deletion)" while the same document stated nothing
   is ever deleted and listed true forgetting as unbuilt. The table now separates decay
