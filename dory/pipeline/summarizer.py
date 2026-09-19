@@ -31,6 +31,14 @@ from ..graph import Graph
 from ..schema import NodeType, EdgeType, new_id, now_iso
 from .llm_util import LLM_TIMEOUT, parse_llm_json
 
+# A summary of a real session runs past a thousand output tokens — a 15k-char
+# LongMemEval session needed 1263. At the old caps (1024 narrative, 512
+# structured) the JSON came back cut mid-key, parse_llm_json correctly rejected
+# it, and the caller logged "JSON parse failed" — which reads as a model
+# formatting problem and sends the reader after the parser instead of the
+# budget. Sized to match the Observer's 4096.
+SUMMARY_MAX_TOKENS = 4096
+
 logger = logging.getLogger(__name__)
 
 
@@ -167,10 +175,12 @@ def _call_anthropic(turns_text: str, model: str, api_key: str, session_date: str
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model=model,
-            max_tokens=1024,
+            max_tokens=SUMMARY_MAX_TOKENS,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _user_message(turns_text, session_date)}],
         )
+        if getattr(resp, "stop_reason", None) == "max_tokens":
+            return {"_error": f"response truncated at max_tokens={SUMMARY_MAX_TOKENS}"}
         return parse_llm_json(resp.content[0].text) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
@@ -223,10 +233,12 @@ def _call_anthropic_summary(turns_text: str, model: str, api_key: str, session_d
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model=model,
-            max_tokens=512,
+            max_tokens=SUMMARY_MAX_TOKENS,
             system=_SUMMARY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _summary_user_message(turns_text, session_date)}],
         )
+        if getattr(resp, "stop_reason", None) == "max_tokens":
+            return {"_error": f"response truncated at max_tokens={SUMMARY_MAX_TOKENS}"}
         return parse_llm_json(resp.content[0].text) or {"_error": "JSON parse failed"}
     except Exception as e:
         return {"_error": str(e)}
