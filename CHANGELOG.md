@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.2.0] — 2026-09-18
+
+### Fixed
+- **A correction could not supersede the memory it corrected.** Consolidation
+  handled memories that were *old*, not memories that were *wrong*. Supersession
+  required Jaccard in [0.45, 0.82), a shared subject and a matching type, and
+  only one shape passed: the same sentence with a single word swapped. A rename
+  ("called Engram" → "called Dory", j=0.818), a negation ("uses X" → "does not
+  use X", j=0.636) and a detailed correction of a terse claim (j=0.029) were all
+  rejected. In one real graph a preference survived five months past the switch
+  it described, and a belief called a project by a name dropped six months
+  earlier — both reported as current by retrieval.
+  - `_shared_subject` compared the first two significant words, so a rename
+    (which changes word one) or a negation (which inserts one) failed
+    positionally. It now uses content-word overlap anywhere in the text.
+  - `_containment` complements Jaccard. Jaccard divides by the union, so the
+    more carefully a correction is written the lower it scores against the terse
+    claim it corrects — 108 words against 8 gave 0.029.
+- **Deduplication could destroy the correction and keep the error.** A pair that
+  crossed `dup_threshold` was merged, and `_merge_duplicates` hard-deletes the
+  loser while keeping the *higher-salience* node. An entrenched wrong fact wins
+  that every time: 0.655 salience across 39 activations against 0.356 and zero
+  for the node fixing it. `_is_contradiction` now distinguishes a substitution
+  ("Engram"/"Dory", each side holding a word the other lacks) or a negation from
+  a pure elaboration ("Python for projects" / "Python for all projects").
+  Contradicting pairs are never merged; they supersede by recency at any
+  similarity. Elaborations still merge, unchanged.
+
+### Added
+- `containment_threshold` (default 0.7) and `_MIN_SIGNIFICANT`, a floor on how
+  short a text may be before overlap comparison means anything. Found by running
+  against a real 198-node graph: a one-word node like "SQLite" is wholly
+  contained in any paragraph mentioning it, scoring 1.0, which proposed
+  archiving every short concept node. Candidates there went 21 → 4, all genuine.
+- 14 tests covering each rejected correction shape, the salience-versus-recency
+  case, and both false-positive classes.
+
 ## [1.1.0] — 2026-09-18
 
 ### Added
