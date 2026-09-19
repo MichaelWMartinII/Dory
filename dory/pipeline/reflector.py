@@ -59,8 +59,29 @@ _PREF_STOPWORDS = frozenset({
 # Similarity helpers
 # ---------------------------------------------------------------------------
 
+_STOP = {"the", "a", "an", "is", "are", "was", "were", "has", "have",
+         "had", "of", "in", "on", "at", "to", "for", "with", "and", "or",
+         "it", "its", "as", "by", "that", "this", "any", "more", "be"}
+
+# Words that flip a statement's polarity. "X uses Y" and "X no longer uses Y"
+# are lexically near-identical but mean opposite things, so similarity alone
+# cannot tell a restatement from a contradiction.
+_NEGATIONS = {"not", "no", "never", "cannot", "isn't", "doesn't", "don't",
+              "didn't", "won't", "stopped", "longer", "ceased"}
+
+
 def _word_set(text: str) -> set[str]:
     return set(text.lower().split())
+
+
+def _significant_words(text: str) -> set[str]:
+    """Content words, stripped of punctuation and stopwords."""
+    out = set()
+    for w in text.lower().split():
+        w = w.strip(".,;:!?()[]\"'")
+        if w and w not in _STOP and len(w) > 2:
+            out.add(w)
+    return out
 
 
 def _jaccard(a: str, b: str) -> float:
@@ -70,19 +91,67 @@ def _jaccard(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
-def _shared_subject(a: str, b: str) -> bool:
+# Below this many content words a text carries too little signal to compare by
+# overlap: a one-word node like "SQLite" is wholly contained in any paragraph
+# that happens to mention SQLite, which would score a perfect 1.0 and archive
+# every short concept node in the graph.
+_MIN_SIGNIFICANT = 4
+
+
+def _containment(a: str, b: str) -> float:
+    """Overlap relative to the *shorter* text.
+
+    Jaccard divides by the union, so a long, careful correction can never
+    score highly against the terse fact it corrects — the more thoroughly the
+    correction is written, the more invisible it becomes. Containment does not
+    punish that length gap, but it is only meaningful when both sides carry
+    enough words to be about something.
     """
-    Rough heuristic: do both strings share the first 2+ significant words?
-    Used to detect "same subject, different predicate" (supersession candidates).
-    """
-    stop = {"the", "a", "an", "is", "are", "was", "were", "has", "have",
-            "had", "of", "in", "on", "at", "to", "for", "with", "and", "or"}
-    wa = [w for w in a.lower().split() if w not in stop]
-    wb = [w for w in b.lower().split() if w not in stop]
+    wa, wb = _significant_words(a), _significant_words(b)
     if not wa or not wb:
+        return 0.0
+    if min(len(wa), len(wb)) < _MIN_SIGNIFICANT:
+        return 0.0
+    return len(wa & wb) / min(len(wa), len(wb))
+
+
+def _shared_subject(a: str, b: str) -> bool:
+    """Do these two statements appear to be about the same thing?
+
+    Previously this compared the first two significant words, which broke on
+    exactly the corrections that matter: a rename changes the opening word
+    ("Engram is…" / "Dory is…") and a negation inserts one ("Elwin uses…" /
+    "Elwin does not use…"). Overlap anywhere in the content words survives both.
+    """
+    sa, sb = _significant_words(a), _significant_words(b)
+    if not sa or not sb:
         return False
-    # First two significant words match
-    return wa[:2] == wb[:2]
+    # With only a word or two to go on, overlap proves nothing — demand the
+    # content words match outright rather than merely co-occur.
+    if min(len(sa), len(sb)) < _MIN_SIGNIFICANT:
+        return sa == sb
+    return len(sa & sb) / min(len(sa), len(sb)) >= 0.4
+
+
+def _polarity_differs(a: str, b: str) -> bool:
+    """True when exactly one of the two statements is negated."""
+    return bool(_word_set(a) & _NEGATIONS) != bool(_word_set(b) & _NEGATIONS)
+
+
+def _is_substitution(a: str, b: str) -> bool:
+    """True when each text carries a content word the other lacks.
+
+    Distinguishes a replaced value ("called Engram" / "called Dory") from a
+    pure elaboration ("Python for projects" / "Python for all projects").
+    Only the former risks destroying a fact by merging.
+    """
+    sa, sb = _significant_words(a), _significant_words(b)
+    return bool(sa - sb) and bool(sb - sa)
+
+
+def _is_contradiction(a: str, b: str) -> bool:
+    """A pair that must never be merged: one replaces or negates the other."""
+    return _polarity_differs(a, b) or _is_substitution(a, b)
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +171,12 @@ class Reflector:
         Jaccard similarity above which two nodes are checked for supersession.
         Lower than dup_threshold — overlapping subject, different content.
         Default 0.45.
+    containment_threshold : float
+        Overlap relative to the shorter text, above which a contradicting pair
+        supersedes even when Jaccard is low. This is the path for a long,
+        detailed correction of a terse fact, which Jaccard scores near zero
+        purely because of the length gap. Default 0.7 — lower values start
+        matching unrelated facts that share generic technical words.
     compress_older_than_hours : float
         Compress raw observations older than this many hours. Default 2.0.
     llm_model : str
@@ -118,6 +193,7 @@ class Reflector:
         db_path: Path | None = None,
         dup_threshold: float = 0.82,
         supersede_threshold: float = 0.45,
+        containment_threshold: float = 0.7,
         compress_older_than_hours: float = 2.0,
         llm_model: str = "qwen3:14b",
         llm_backend: str = "ollama",
@@ -127,6 +203,7 @@ class Reflector:
         self.db_path = db_path or graph.path
         self.dup_threshold = dup_threshold
         self.supersede_threshold = supersede_threshold
+        self.containment_threshold = containment_threshold
         self.compress_older_than_hours = compress_older_than_hours
         self.llm_model = llm_model
         self.llm_backend = llm_backend
@@ -211,11 +288,30 @@ class Reflector:
             for b in nodes[i + 1:]:
                 if a.type != b.type:
                     continue
+                if not _shared_subject(a.content, b.content):
+                    continue
+
                 sim = _jaccard(a.content, b.content)
+                contradicts = _is_contradiction(a.content, b.content)
+
+                # A contradiction supersedes at any similarity above the floor,
+                # including above dup_threshold — that band is where a rename
+                # would otherwise be merged and one side destroyed.
+                if contradicts and sim >= self.supersede_threshold:
+                    candidates.append((a, b))
+                    continue
+
+                # Same-polarity restatement: the original band.
                 if self.supersede_threshold <= sim < self.dup_threshold:
-                    if _shared_subject(a.content, b.content):
-                        # a is older (sorted by created_at), b is newer
-                        candidates.append((a, b))
+                    candidates.append((a, b))
+                    continue
+
+                # A detailed correction of a terse fact scores near zero on
+                # Jaccard purely because of the length gap; containment sees it.
+                if (contradicts
+                        and _containment(a.content, b.content) >= self.containment_threshold):
+                    candidates.append((a, b))
+
         return candidates
 
     # ------------------------------------------------------------------
@@ -229,6 +325,13 @@ class Reflector:
 
         for a, b, sim in pairs:
             if a.id in archived_ids or b.id in archived_ids:
+                continue
+
+            # Never merge a pair where one replaces or negates the other.
+            # Merging hard-deletes the loser and picks by salience, so an
+            # entrenched wrong fact would beat the correction that fixes it.
+            # Leave these for _apply_supersessions, which archives by recency.
+            if _is_contradiction(a.content, b.content):
                 continue
 
             # Keep the higher-salience node; archive the other
