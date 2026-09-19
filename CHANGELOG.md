@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.1] — 2026-09-18
+
+### Fixed
+- **Session summaries were silently truncated away on the Anthropic backend.**
+  Summary calls capped output at 1024 tokens (narrative) and 512 (structured),
+  but a summary of a real session runs longer — a 15,304-character session
+  needed 1263. The JSON came back cut mid-key, `parse_llm_json` correctly
+  rejected it, and the caller logged "JSON parse failed", which reads as a model
+  formatting problem and sends the reader after the parser instead of the
+  budget. Because `summarize()` and `summarize_session()` return `None` on
+  failure and only log a warning, SESSION and SESSION_SUMMARY nodes were quietly
+  absent from affected graphs — and those carry the `salient_counts` that
+  counting questions depend on. Both caps are now `SUMMARY_MAX_TOKENS` (4096),
+  matching the Observer.
+- A response stopped at the token cap now reports `response truncated at
+  max_tokens=N` instead of blaming the JSON parser.
+
+Found by a 10-question benchmark run that logged the warning 13 times.
+
 ## [1.2.0] — 2026-09-18
 
 ### Fixed

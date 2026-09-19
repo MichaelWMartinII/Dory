@@ -17,3 +17,4 @@ venv/
 Screenshot*
 docs/Screen*
 docs/demo_v3.html
+benchmarks/runs/
